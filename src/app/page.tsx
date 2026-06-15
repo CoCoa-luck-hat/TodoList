@@ -227,6 +227,26 @@ const StatsSkeleton = () => (
 // Programmatic Web Audio API Sound Synthesizer
 const playSFX = (type: "complete" | "click" | "toggle" | "delete" | "alarm") => {
   if (typeof window === "undefined") return;
+
+  // Tactical Haptic Vibration
+  try {
+    if (window.navigator && typeof window.navigator.vibrate === "function") {
+      if (type === "complete") {
+        window.navigator.vibrate([40, 40, 40]);
+      } else if (type === "delete") {
+        window.navigator.vibrate([60, 50, 60]);
+      } else if (type === "alarm") {
+        window.navigator.vibrate([100, 100, 100, 100, 100]);
+      } else if (type === "click") {
+        window.navigator.vibrate(12);
+      } else if (type === "toggle") {
+        window.navigator.vibrate([10, 10]);
+      }
+    }
+  } catch (err) {
+    console.warn("Vibration feedback failed:", err);
+  }
+
   try {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioContextClass) return;
@@ -539,6 +559,8 @@ export default function Dashboard() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isTeamSettingsModalOpen, setIsTeamSettingsModalOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isMobileFabOpen, setIsMobileFabOpen] = useState(false);
 
   // Form Field States
   const [newProjectName, setNewProjectName] = useState("");
@@ -1086,6 +1108,73 @@ export default function Dashboard() {
     }
   };
 
+  // Update Task Status (for mobile swipe or other status change actions)
+  const handleUpdateTaskStatus = async (taskId: string, targetStatus: string) => {
+    // Save original states for rollback
+    const originalUnassigned = [...unassignedTasks];
+    const originalProjects = projects.map(p => ({
+      ...p,
+      tasks: p.tasks ? p.tasks.map(t => ({
+        ...t,
+        subtasks: t.subtasks ? t.subtasks.map(st => ({ ...st })) : []
+      })) : []
+    }));
+
+    // Optimistically update the state locally
+    setUnassignedTasks(prev =>
+      prev.map(t => (t.id === taskId ? { ...t, status: targetStatus } : t))
+    );
+    setProjects(prev =>
+      prev.map(p => ({
+        ...p,
+        tasks: p.tasks ? p.tasks.map(t => (t.id === taskId ? { ...t, status: targetStatus } : t)) : []
+      }))
+    );
+
+    try {
+      const payload: any = {
+        actionType: "task",
+        id: taskId,
+        status: targetStatus,
+      };
+      if (activeWorkspace !== "personal") {
+        payload.teamId = activeWorkspace.id;
+      }
+      const res = await fetch("/api/tasks", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        fetchData(true);
+        const statusName =
+          targetStatus === "TODO"
+            ? t("statusTodo")
+            : targetStatus === "IN_PROGRESS"
+              ? t("statusInProgress")
+              : t("statusDone");
+        showToast(`${t("toastMovedTo")} ${statusName}`);
+
+        if (targetStatus === "DONE") {
+          triggerConfetti();
+          playSFX("complete");
+        } else {
+          playSFX("click");
+        }
+      } else {
+        // Rollback state
+        setUnassignedTasks(originalUnassigned);
+        setProjects(originalProjects);
+        showToast("Failed to update task", "error");
+      }
+    } catch (error) {
+      console.error("Error updating task status:", error);
+      setUnassignedTasks(originalUnassigned);
+      setProjects(originalProjects);
+    }
+  };
+
   // Toggle Subtask Completion status
   const handleToggleSubtask = async (subtaskId: string, isCompleted: boolean) => {
     try {
@@ -1363,6 +1452,38 @@ export default function Dashboard() {
         </div>
       )}
       <div className="app-container">
+        {/* MOBILE TOPBAR HEADER */}
+        <header className="mobile-header" style={{ display: "none" }}>
+          <div className="mobile-header-title">
+            <CheckCircle className="w-5 h-5" />
+            <span>{t("brandName")}</span>
+          </div>
+          <div className="mobile-header-actions">
+            <button
+              onClick={() => { setLanguage(language === "TH" ? "EN" : "TH"); playSFX("toggle"); }}
+              className="btn btn-secondary"
+              style={{ fontWeight: 700, fontSize: "0.75rem", padding: "6px 10px", minWidth: "auto", border: "1px solid var(--border-color)", background: "var(--bg-card)" }}
+            >
+              {language}
+            </button>
+            
+            {/* Profile Avatar triggers Workspace Switcher Bottom Sheet */}
+            <div onClick={() => { setIsMobileMenuOpen(true); playSFX("click"); }} style={{ cursor: "pointer" }}>
+              {userProfile?.image && userProfile.image.startsWith("http") ? (
+                <img src={userProfile.image} alt={userProfile.name || "User"} className="mobile-profile-trigger" />
+              ) : userProfile?.image ? (
+                <div className="mobile-profile-trigger-fallback">
+                  {userProfile.image}
+                </div>
+              ) : (
+                <div className="mobile-profile-trigger-fallback">
+                  {userProfile?.name ? userProfile.name[0].toUpperCase() : (session?.user?.name ? session.user.name[0].toUpperCase() : "U")}
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
+
         {/* 1. SIDEBAR */}
         <aside className="sidebar">
           <div className="sidebar-logo">
@@ -1611,64 +1732,122 @@ export default function Dashboard() {
                 <div className="dashboard-grid" style={{ flexGrow: 1 }}>
                   {/* Stat Cards */}
                   {(() => {
-                    const total = getAllTasks().length;
-                    const completed = getAllTasks().filter((t) => t.status === "DONE").length;
-                    const pending = getAllTasks().filter((t) => t.status !== "DONE").length;
+                    const allTasks = getAllTasks();
+                    const total = allTasks.length;
+                    const completed = allTasks.filter((t) => t.status === "DONE").length;
+                    const pending = allTasks.filter((t) => t.status !== "DONE").length;
                     const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
                     const pendingRate = total > 0 ? Math.round((pending / total) * 100) : 0;
+                    
+                    const highPriorityCount = allTasks.filter((t) => t.priority === "HIGH" && t.status !== "DONE").length;
+                    const overdueCount = allTasks.filter((t) => t.status !== "DONE" && t.dueDate && new Date(t.dueDate) < new Date(new Date().setHours(0,0,0,0))).length;
+                    const recentCount = allTasks.filter((t) => {
+                      if (!t.createdAt) return false;
+                      const diffDays = Math.floor((new Date().getTime() - new Date(t.createdAt).getTime()) / (1000 * 3600 * 24));
+                      return diffDays <= 7;
+                    }).length;
+
+                    // Custom Circular Progress SVG
+                    const CircularProgress = ({ rate, color }: { rate: number, color: string }) => {
+                      const radius = 20;
+                      const circumference = 2 * Math.PI * radius;
+                      const strokeDashoffset = circumference - (rate / 100) * circumference;
+                      return (
+                        <div style={{ position: "relative", width: "48px", height: "48px" }}>
+                          <svg width="48" height="48" viewBox="0 0 48 48" style={{ transform: "rotate(-90deg)" }}>
+                            <circle cx="24" cy="24" r={radius} fill="none" stroke="var(--border-color)" strokeWidth="4" />
+                            <circle cx="24" cy="24" r={radius} fill="none" stroke={color} strokeWidth="4" 
+                              strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} 
+                              style={{ transition: "stroke-dashoffset 0.5s ease-in-out" }} strokeLinecap="round" />
+                          </svg>
+                          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: "bold", color: "var(--text-main)" }}>
+                            {rate}%
+                          </div>
+                        </div>
+                      );
+                    };
+
+                    const watermarkStyle = { position: "absolute" as const, right: "-10px", bottom: "-15px", opacity: 0.04, transform: "rotate(-15deg)", pointerEvents: "none" as const, zIndex: 0 };
+                    const cardStyle = { position: "relative" as const, overflow: "hidden" as const, display: "flex" as const, flexDirection: "column" as const };
+                    const metricsContainerStyle = { display: "flex", gap: "12px", paddingTop: "4px", marginTop: "auto", zIndex: 1, position: "relative" as const };
+                    const getMetricStyle = (baseColor: string) => ({ display: "flex", flexDirection: "column" as const, gap: "2px", flex: 1, backgroundColor: `color-mix(in srgb, ${baseColor} 10%, transparent)`, padding: "10px 14px", borderRadius: "12px" });
+                    const metricValueStyle = { fontSize: "1.125rem", fontWeight: 700 };
+
                     return (
                       <>
-                        <div className="card stat-card">
-                          <div className="stat-header">
+                        <div className="card stat-card stat-total" style={cardStyle}>
+                          <CheckSquare size={120} style={{ ...watermarkStyle, color: "var(--primary)" }} />
+                          <div className="stat-header" style={{ position: "relative", zIndex: 1 }}>
                             <span>{t("totalTasks")}</span>
                             <div className="stat-icon" style={{ backgroundColor: "var(--primary-light)", color: "var(--primary)" }}>
                               <Check className="w-4 h-4" />
                             </div>
                           </div>
-                          <div className="stat-value">{total}</div>
-                          <div className="stat-progress-bar">
-                            <div className="stat-progress-fill" style={{ width: total > 0 ? "100%" : "0%", backgroundColor: "var(--primary)" }} />
-                          </div>
-                        </div>
-
-                        <div className="card stat-card">
-                          <div className="stat-header">
-                            <span>{t("completedTasks")}</span>
-                            <div className="stat-icon" style={{ backgroundColor: "var(--success-light)", color: "var(--success)" }}>
-                              <CheckCircle className="w-4 h-4" />
+                          <div className="stat-value" style={{ position: "relative", zIndex: 1 }}>{total}</div>
+                          <div className="stat-sub-metrics" style={metricsContainerStyle}>
+                            <div className="stat-sub-metric" style={getMetricStyle("var(--primary)")}>
+                              <span className="stat-sub-label" style={{ color: "var(--primary)" }}>{language === "TH" ? "เพิ่มสัปดาห์นี้" : "Added this week"}</span>
+                              <span className="stat-sub-value" style={{ ...metricValueStyle, color: "var(--primary)" }}>+{recentCount}</span>
                             </div>
                           </div>
-                          <div className="stat-value">{completed}</div>
-                          <div className="stat-progress-bar">
-                            <div className="stat-progress-fill" style={{ width: `${completionRate}%`, backgroundColor: "var(--success)" }} />
-                          </div>
-                          <span className="stat-subtext">{completionRate}%</span>
                         </div>
 
-                        <div className="card stat-card">
-                          <div className="stat-header">
+                        <div className="card stat-card stat-completed" style={cardStyle}>
+                          <CheckCircle size={120} style={{ ...watermarkStyle, color: "var(--success)" }} />
+                          <div className="stat-header" style={{ position: "relative", zIndex: 1 }}>
+                            <span>{t("completedTasks")}</span>
+                            <CircularProgress rate={completionRate} color="var(--success)" />
+                          </div>
+                          <div className="stat-value" style={{ position: "relative", zIndex: 1 }}>{completed}</div>
+                          <div className="stat-sub-metrics" style={metricsContainerStyle}>
+                            <div className="stat-sub-metric" style={getMetricStyle("var(--success)")}>
+                              <span className="stat-sub-label" style={{ color: "var(--success)" }}>{language === "TH" ? "ความคืบหน้าโดยรวม" : "Overall Progress"}</span>
+                              <span className="stat-sub-value" style={{ ...metricValueStyle, color: "var(--success)" }}>{completionRate}%</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="card stat-card stat-pending" style={cardStyle}>
+                          <Clock size={120} style={{ ...watermarkStyle, color: "var(--warning)" }} />
+                          <div className="stat-header" style={{ position: "relative", zIndex: 1 }}>
                             <span>{t("pendingTasks")}</span>
                             <div className="stat-icon" style={{ backgroundColor: "var(--warning-light)", color: "var(--warning)" }}>
                               <Clock className="w-4 h-4" />
                             </div>
                           </div>
-                          <div className="stat-value">{pending}</div>
-                          <div className="stat-progress-bar">
-                            <div className="stat-progress-fill" style={{ width: `${pendingRate}%`, backgroundColor: "var(--warning)" }} />
+                          <div className="stat-value" style={{ position: "relative", zIndex: 1 }}>{pending}</div>
+                          <div className="stat-sub-metrics" style={metricsContainerStyle}>
+                            <div className="stat-sub-metric" style={getMetricStyle("var(--danger)")}>
+                              <span className="stat-sub-label" style={{ color: "var(--danger)", display: "flex", alignItems: "center", gap: "4px" }}>
+                                <AlertCircle className="w-3 h-3" />
+                                {language === "TH" ? "งานด่วน" : "High Priority"}
+                              </span>
+                              <span className="stat-sub-value" style={{ ...metricValueStyle, color: "var(--danger)" }}>{highPriorityCount}</span>
+                            </div>
+                            <div className="stat-sub-metric" style={getMetricStyle("var(--warning)")}>
+                              <span className="stat-sub-label" style={{ color: "var(--warning)", display: "flex", alignItems: "center", gap: "4px" }}>
+                                <Clock className="w-3 h-3" />
+                                {language === "TH" ? "เกินกำหนด" : "Overdue"}
+                              </span>
+                              <span className="stat-sub-value" style={{ ...metricValueStyle, color: "var(--warning)" }}>{overdueCount}</span>
+                            </div>
                           </div>
-                          <span className="stat-subtext">{pendingRate}%</span>
                         </div>
 
-                        <div className="card stat-card">
-                          <div className="stat-header">
+                        <div className="card stat-card stat-projects" style={cardStyle}>
+                          <FolderKanban size={120} style={{ ...watermarkStyle, color: "var(--accent-purple)" }} />
+                          <div className="stat-header" style={{ position: "relative", zIndex: 1 }}>
                             <span>{t("activeProjects")}</span>
-                            <div className="stat-icon" style={{ backgroundColor: "var(--border-color)", color: "var(--text-main)" }}>
+                            <div className="stat-icon" style={{ backgroundColor: "var(--bg-input)", color: "var(--text-main)" }}>
                               <FolderKanban className="w-4 h-4" />
                             </div>
                           </div>
-                          <div className="stat-value">{projects.length}</div>
-                          <div className="stat-progress-bar">
-                            <div className="stat-progress-fill" style={{ width: projects.length > 0 ? "100%" : "0%", backgroundColor: "var(--accent-purple)" }} />
+                          <div className="stat-value" style={{ position: "relative", zIndex: 1 }}>{projects.length}</div>
+                          <div className="stat-sub-metrics" style={metricsContainerStyle}>
+                            <div className="stat-sub-metric" style={getMetricStyle("var(--text-muted)")}>
+                              <span className="stat-sub-label" style={{ color: "var(--text-muted)" }}>{language === "TH" ? "งานที่ยังไม่มอบหมาย" : "Unassigned Tasks"}</span>
+                              <span className="stat-sub-value" style={{ ...metricValueStyle, color: "var(--text-main)" }}>{unassignedTasks.length}</span>
+                            </div>
                           </div>
                         </div>
                       </>
@@ -1681,10 +1860,20 @@ export default function Dashboard() {
                       <Bell className="w-5 h-5 text-indigo-500" />
                       <span>{t("recentTasks")}</span>
                     </h3>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "12px", overflowY: "auto", maxHeight: "250px" }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "12px", overflowY: "auto", maxHeight: "250px", height: "100%", justifyContent: getAllTasks().length === 0 ? "center" : "flex-start" }}>
                       {getAllTasks().length === 0 ? (
-                        <div style={{ color: "var(--text-muted)", fontSize: "0.875rem", textAlign: "center", marginTop: "32px" }}>
-                          {t("noTasks")}
+                        <div className="empty-state-svg-container" style={{ padding: "16px" }}>
+                          <svg className="empty-state-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: "80px", height: "80px", marginBottom: "8px" }}>
+                            <rect x="30" y="20" width="40" height="60" rx="8" className="svg-bg" stroke="var(--border-color)" strokeWidth="2" />
+                            <path d="M45 15h10a2 2 0 012 2v4a2 2 0 01-2 2H45a2 2 0 01-2-2v-4a2 2 0 012-2z" className="svg-primary" strokeWidth="2" />
+                            <path d="M40 40h20M40 52h20M40 64h12" className="svg-stroke" strokeWidth="2" strokeLinecap="round" />
+                          </svg>
+                          <h4 className="empty-state-svg-title" style={{ fontSize: "0.85rem" }}>
+                            {language === "TH" ? "ไม่มีงานล่าสุด" : "No recent tasks"}
+                          </h4>
+                          <p className="empty-state-svg-desc" style={{ fontSize: "0.75rem", maxWidth: "250px" }}>
+                            {language === "TH" ? "เพิ่มงานใหม่เพื่อเริ่มติดตามความคืบหน้า" : "Add a task to start tracking your progress"}
+                          </p>
                         </div>
                       ) : (
                         getAllTasks().slice(-5).map((task) => (
@@ -1737,26 +1926,42 @@ export default function Dashboard() {
                   {/* Productivity Area Chart Preview */}
                   <div className="card" style={{ gridColumn: "span 2", minHeight: "300px" }}>
                     <h3 style={{ marginBottom: "16px" }}>{t("taskCompletionStatus")}</h3>
-                    <ResponsiveContainer width="100%" height="80%">
-                      <AreaChart
-                        data={[
-                          { name: t("statusTodo"), count: getAllTasks().filter((t) => t.status === "TODO").length },
-                          { name: t("statusInProgress"), count: getAllTasks().filter((t) => t.status === "IN_PROGRESS").length },
-                          { name: t("statusDone"), count: getAllTasks().filter((t) => t.status === "DONE").length },
-                        ]}
-                      >
-                        <defs>
-                          <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.4} />
-                            <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
-                          </linearGradient>
-                        </defs>
-                        <XAxis dataKey="name" stroke="var(--text-muted)" style={{ fontSize: "0.75rem" }} />
-                        <YAxis stroke="var(--text-muted)" style={{ fontSize: "0.75rem" }} allowDecimals={false} />
-                        <Tooltip />
-                        <Area type="monotone" dataKey="count" stroke="var(--primary)" fillOpacity={1} fill="url(#colorCount)" />
-                      </AreaChart>
-                    </ResponsiveContainer>
+                    {getAllTasks().length === 0 ? (
+                      <div className="empty-state-svg-container" style={{ padding: "16px", height: "100%", justifyContent: "center" }}>
+                        <svg className="empty-state-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: "80px", height: "80px", marginBottom: "8px" }}>
+                          <path d="M20 80h60M20 20v60" className="svg-stroke" strokeWidth="2.5" strokeLinecap="round" />
+                          <path d="M25 75l15-15 15 10 25-30" className="svg-primary" strokeWidth="2" strokeLinecap="round" strokeDasharray="4 4" />
+                          <circle cx="80" cy="40" r="4" className="svg-accent" strokeWidth="2" />
+                        </svg>
+                        <h4 className="empty-state-svg-title" style={{ fontSize: "0.85rem" }}>
+                          {language === "TH" ? "ยังไม่มีข้อมูลสถิติ" : "No statistics data yet"}
+                        </h4>
+                        <p className="empty-state-svg-desc" style={{ fontSize: "0.75rem", maxWidth: "250px" }}>
+                          {language === "TH" ? "สร้างและทำภารกิจให้เสร็จเพื่อบันทึกสถิติ" : "Create and complete tasks to generate statistics"}
+                        </p>
+                      </div>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="80%">
+                        <AreaChart
+                          data={[
+                            { name: t("statusTodo"), count: getAllTasks().filter((t) => t.status === "TODO").length },
+                            { name: t("statusInProgress"), count: getAllTasks().filter((t) => t.status === "IN_PROGRESS").length },
+                            { name: t("statusDone"), count: getAllTasks().filter((t) => t.status === "DONE").length },
+                          ]}
+                        >
+                          <defs>
+                            <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.4} />
+                              <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <XAxis dataKey="name" stroke="var(--text-muted)" style={{ fontSize: "0.75rem" }} />
+                          <YAxis stroke="var(--text-muted)" style={{ fontSize: "0.75rem" }} allowDecimals={false} />
+                          <Tooltip />
+                          <Area type="monotone" dataKey="count" stroke="var(--primary)" fillOpacity={1} fill="url(#colorCount)" />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    )}
                   </div>
                 </div>
               )
@@ -1795,15 +2000,26 @@ export default function Dashboard() {
                               </div>
                               <div className="task-list" ref={provided.innerRef} {...provided.droppableProps}>
                                 {tasks.map((task, idx) => (
-                                  <DraggableDraggableTask key={task.id} task={task} index={idx} onDelete={handleDeleteTask} onToggleSubtask={handleToggleSubtask} onAddSubtask={handleAddSubtask} />
+                                  <DraggableDraggableTask key={task.id} task={task} index={idx} onDelete={handleDeleteTask} onToggleSubtask={handleToggleSubtask} onAddSubtask={handleAddSubtask} onStatusChange={handleUpdateTaskStatus} />
                                 ))}
                                 {provided.placeholder}
                                 {tasks.length === 0 && (
-                                  <div className="kanban-empty-state">
-                                    <ListTodo style={{ opacity: 0.5 }} />
-                                    <span style={{ fontSize: "0.85rem", fontWeight: 500 }}>
+                                  <div className="empty-state-svg-container">
+                                    <svg className="empty-state-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                      <rect x="25" y="15" width="50" height="70" rx="8" className="svg-bg" strokeWidth="2" stroke="var(--border-color)" />
+                                      <rect x="35" y="10" width="30" height="10" rx="3" className="svg-primary" strokeWidth="2" />
+                                      <circle cx="50" cy="35" r="4" className="svg-accent" strokeWidth="2" />
+                                      <line x1="42" y1="50" x2="65" y2="50" className="svg-stroke" strokeWidth="2.5" strokeLinecap="round" />
+                                      <line x1="42" y1="62" x2="58" y2="62" className="svg-stroke" strokeWidth="2.5" strokeLinecap="round" />
+                                      <circle cx="32" cy="50" r="2" className="svg-primary" />
+                                      <circle cx="32" cy="62" r="2" className="svg-primary" />
+                                    </svg>
+                                    <h4 className="empty-state-svg-title">
                                       {language === "TH" ? "ยังไม่มีงานที่ต้องทำ" : "No tasks to do"}
-                                    </span>
+                                    </h4>
+                                    <p className="empty-state-svg-desc">
+                                      {language === "TH" ? "สร้างงานใหม่เพื่อเริ่มดำเนินการ" : "Create a new task to get started"}
+                                    </p>
                                   </div>
                                 )}
                               </div>
@@ -1826,15 +2042,22 @@ export default function Dashboard() {
                               </div>
                               <div className="task-list" ref={provided.innerRef} {...provided.droppableProps}>
                                 {tasks.map((task, idx) => (
-                                  <DraggableDraggableTask key={task.id} task={task} index={idx} onDelete={handleDeleteTask} onToggleSubtask={handleToggleSubtask} onAddSubtask={handleAddSubtask} />
+                                  <DraggableDraggableTask key={task.id} task={task} index={idx} onDelete={handleDeleteTask} onToggleSubtask={handleToggleSubtask} onAddSubtask={handleAddSubtask} onStatusChange={handleUpdateTaskStatus} />
                                 ))}
                                 {provided.placeholder}
                                 {tasks.length === 0 && (
-                                  <div className="kanban-empty-state">
-                                    <Loader style={{ opacity: 0.5 }} />
-                                    <span style={{ fontSize: "0.85rem", fontWeight: 500 }}>
+                                  <div className="empty-state-svg-container">
+                                    <svg className="empty-state-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                      <circle cx="50" cy="50" r="24" className="svg-bg" stroke="var(--border-color)" strokeWidth="2" />
+                                      <circle cx="50" cy="50" r="12" className="svg-primary" strokeWidth="2" />
+                                      <path d="M50 18v8M50 74v8M18 50h8M74 50h8M27.4 27.4l5.6 5.6M67 67l5.6 5.6M27.4 72.6l5.6-5.6M67 33l5.6-5.6" className="svg-primary" strokeWidth="2.5" strokeLinecap="round" />
+                                    </svg>
+                                    <h4 className="empty-state-svg-title">
                                       {language === "TH" ? "ยังไม่มีงานที่กำลังทำ" : "No tasks in progress"}
-                                    </span>
+                                    </h4>
+                                    <p className="empty-state-svg-desc">
+                                      {language === "TH" ? "ลากการ์ดงานมาที่นี่เพื่อเริ่มทำ" : "Drag a task here to begin working"}
+                                    </p>
                                   </div>
                                 )}
                               </div>
@@ -1857,15 +2080,23 @@ export default function Dashboard() {
                               </div>
                               <div className="task-list" ref={provided.innerRef} {...provided.droppableProps}>
                                 {tasks.map((task, idx) => (
-                                  <DraggableDraggableTask key={task.id} task={task} index={idx} onDelete={handleDeleteTask} onToggleSubtask={handleToggleSubtask} onAddSubtask={handleAddSubtask} />
+                                  <DraggableDraggableTask key={task.id} task={task} index={idx} onDelete={handleDeleteTask} onToggleSubtask={handleToggleSubtask} onAddSubtask={handleAddSubtask} onStatusChange={handleUpdateTaskStatus} />
                                 ))}
                                 {provided.placeholder}
                                 {tasks.length === 0 && (
-                                  <div className="kanban-empty-state">
-                                    <CheckCircle style={{ opacity: 0.5 }} />
-                                    <span style={{ fontSize: "0.85rem", fontWeight: 500 }}>
+                                  <div className="empty-state-svg-container">
+                                    <svg className="empty-state-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                      <path d="M35 15h30c0 0 0 30-15 30S35 15 35 15z" className="svg-bg" stroke="var(--border-color)" strokeWidth="2" />
+                                      <path d="M50 45v20M40 65h20" className="svg-stroke" strokeWidth="2.5" strokeLinecap="round" />
+                                      <circle cx="50" cy="28" r="8" className="svg-accent" strokeWidth="2" />
+                                      <path d="M30 20c-5 0-8 3-8 8s5 8 8 8M70 20c5 0 8 3 8 8s-5 8-8 8" className="svg-primary" strokeWidth="2" strokeLinecap="round" />
+                                    </svg>
+                                    <h4 className="empty-state-svg-title">
                                       {language === "TH" ? "ยังไม่มีงานที่เสร็จแล้ว" : "No completed tasks"}
-                                    </span>
+                                    </h4>
+                                    <p className="empty-state-svg-desc">
+                                      {language === "TH" ? "ทำภารกิจให้เสร็จเพื่อรับรางวัล!" : "Complete tasks to unlock achievements!"}
+                                    </p>
                                   </div>
                                 )}
                               </div>
@@ -1909,11 +2140,19 @@ export default function Dashboard() {
                     <div className="chat-messages">
                       {chatMessages.length === 0 ? (
                         <div className="chat-empty-state">
-                          <div className="chat-empty-icon">
-                            <MessageSquare className="w-12 h-12" />
-                          </div>
-                          <p className="chat-empty-title">{language === "TH" ? "ยังไม่มีข้อความ" : "No messages yet"}</p>
-                          <p className="chat-empty-subtitle">{language === "TH" ? "เริ่มพิมพ์เพื่อส่งข้อความแรก" : "Start typing to send the first message"}</p>
+                          <svg className="chat-empty-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M15 45c0-14 12-25 28-25s28 11 28 25c0 6.5-2.6 12.5-7 17l2 8c.3.8-.5 1.5-1.2 1.2l-9.4-4c-3.8 1.8-8 2.8-12.4 2.8-16 0-28-11-28-25z" className="svg-bg" stroke="var(--border-color)" strokeWidth="2" />
+                            <path d="M85 55c0-10-9-18-20-18-2 0-3.8.3-5.6.8C62.4 41 64 45.3 64 50c0 10-7.8 18-18 20a17.4 17.4 0 01-1.3 3c4.5 4.5 10.7 7 17.3 7 3.3 0 6.4-.6 9.3-1.8l7 3c.5.2 1-.2 1-.8l-1.5-6c3.4-3.4 5.2-7.8 5.2-12.4z" className="svg-primary" strokeWidth="2" />
+                            <circle cx="34" cy="45" r="2.5" className="svg-primary" />
+                            <circle cx="43" cy="45" r="2.5" className="svg-primary" />
+                            <circle cx="52" cy="45" r="2.5" className="svg-primary" />
+                          </svg>
+                          <h4 className="empty-state-svg-title">
+                            {language === "TH" ? "ยังไม่มีข้อความ" : "No messages yet"}
+                          </h4>
+                          <p className="empty-state-svg-desc">
+                            {language === "TH" ? "เริ่มพิมพ์เพื่อส่งข้อความแรก" : "Start typing to send the first message"}
+                          </p>
                         </div>
                       ) : (
                         chatMessages.map((msg) => {
@@ -3047,6 +3286,60 @@ export default function Dashboard() {
             </div>
           </form>
         </Modal>
+        {/* Mobile Bottom Navigation */}
+        <nav className="bottom-nav">
+          <div
+            className={`bottom-nav-item ${activeView === "overview" ? "active" : ""}`}
+            onClick={() => { setActiveView("overview"); playSFX("click"); }}
+          >
+            <LayoutDashboard />
+            <span>{t("menuOverview")}</span>
+          </div>
+
+          <div
+            className={`bottom-nav-item ${activeView === "projects" ? "active" : ""}`}
+            onClick={() => { setActiveView("projects"); playSFX("click"); }}
+          >
+            <FolderKanban />
+            <span>{t("menuKanban")}</span>
+          </div>
+
+          <div
+            className={`bottom-nav-item ${activeView === "calendar" ? "active" : ""}`}
+            onClick={() => { setActiveView("calendar"); playSFX("click"); }}
+          >
+            <CalendarIcon />
+            <span>{t("menuCalendar")}</span>
+          </div>
+
+          {activeWorkspace !== "personal" && (
+            <div
+              className={`bottom-nav-item ${activeView === "chat" ? "active" : ""}`}
+              onClick={() => { 
+                setActiveView("chat"); 
+                setUnreadChatCount(0);
+                markChatAsRead();
+                playSFX("click"); 
+              }}
+            >
+              <MessageSquare />
+              <span>{t("menuChat")}</span>
+              {unreadChatCount > 0 && (
+                <span className="bottom-nav-badge">
+                  {unreadChatCount}
+                </span>
+              )}
+            </div>
+          )}
+
+          <div
+            className={`bottom-nav-item ${activeView === "stats" ? "active" : ""}`}
+            onClick={() => { setActiveView("stats"); playSFX("click"); }}
+          >
+            <BarChart3 />
+            <span>{t("menuStats")}</span>
+          </div>
+        </nav>
       </div>
       {isPomodoroVisible && (
         <FloatingPomodoro
@@ -3064,9 +3357,140 @@ export default function Dashboard() {
           onSaveSettings={updatePomodoroSettings}
         />
       )}
-    </>
-  );
-}
+        {/* MOBILE FLOATING ACTION BUTTON (FAB) */}
+        <div className="mobile-fab-container" style={{ display: "none" }}>
+          <button
+            onClick={() => { setIsMobileFabOpen(!isMobileFabOpen); playSFX("click"); }}
+            className="mobile-fab"
+            style={{ transform: isMobileFabOpen ? "rotate(135deg)" : "none", transition: "transform 0.2s ease" }}
+          >
+            <Plus className="w-6 h-6" />
+          </button>
+          <div className={`mobile-fab-menu ${isMobileFabOpen ? "open" : ""}`}>
+            <button
+              onClick={() => { setIsTaskModalOpen(true); setIsMobileFabOpen(false); playSFX("click"); }}
+              className="mobile-fab-sub-item"
+            >
+              <div className="mobile-fab-sub-icon" style={{ backgroundColor: "var(--primary-light)", color: "var(--primary)" }}>
+                <Check className="w-4 h-4" />
+              </div>
+              <span>{language === "TH" ? "สร้างงานใหม่" : "New Task"}</span>
+            </button>
+            <button
+              onClick={() => { setIsProjectModalOpen(true); setIsMobileFabOpen(false); playSFX("click"); }}
+              className="mobile-fab-sub-item"
+            >
+              <div className="mobile-fab-sub-icon" style={{ backgroundColor: "var(--success-light)", color: "var(--success)" }}>
+                <FolderKanban className="w-4 h-4" />
+              </div>
+              <span>{language === "TH" ? "สร้างบอร์ดใหม่" : "New Board"}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* MOBILE WORKSPACE SWITCHER BOTTOM SHEET DRAWER */}
+        {isMobileMenuOpen && (
+          <div className="modal-overlay" onClick={() => setIsMobileMenuOpen(false)} style={{ zIndex: 100000 }}>
+            <div className="modal-container" onClick={(e) => e.stopPropagation()}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+                <h3 style={{ fontSize: "1.1rem", fontWeight: 700 }}>{language === "TH" ? "บัญชีและพื้นที่ทำงาน" : "Account & Workspace"}</h3>
+                <button
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.25rem", color: "var(--text-muted)" }}
+                >
+                  &times;
+                </button>
+              </div>
+
+              {/* Profile details */}
+              <div style={{ display: "flex", alignItems: "center", gap: "12px", background: "var(--bg-app)", padding: "12px", borderRadius: "12px", marginBottom: "20px" }}>
+                {userProfile?.image && userProfile.image.startsWith("http") ? (
+                  <img src={userProfile.image} alt={userProfile.name || "User"} style={{ width: "44px", height: "44px", borderRadius: "50%" }} />
+                ) : userProfile?.image ? (
+                  <div style={{ width: "44px", height: "44px", borderRadius: "50%", background: "var(--bg-card)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "1.2rem", border: "1px solid var(--border-color)" }}>
+                    {userProfile.image}
+                  </div>
+                ) : (
+                  <div style={{ width: "44px", height: "44px", borderRadius: "50%", background: "var(--primary-light)", color: "var(--primary)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "1.2rem" }}>
+                    {userProfile?.name ? userProfile.name[0].toUpperCase() : (session?.user?.name ? session.user.name[0].toUpperCase() : "U")}
+                  </div>
+                )}
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  <span style={{ fontWeight: 700, fontSize: "0.95rem" }}>{userProfile?.name || session?.user?.name || "User"}</span>
+                  <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{userProfile?.email || session?.user?.email}</span>
+                </div>
+              </div>
+
+              {/* Workspace Selector */}
+              <div style={{ marginBottom: "24px" }}>
+                <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "8px" }}>
+                  {language === "TH" ? "เลือกพื้นที่ทำงาน" : "Select Workspace"}
+                </label>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  {workspaceOptions.map((opt: any) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => {
+                        if (opt.value === "personal") {
+                          setActiveWorkspace("personal");
+                          if (activeView === "chat") setActiveView("overview");
+                        } else if (opt.value === "create") {
+                          setIsCreateTeamOpen(true);
+                        } else {
+                          const found = teams.find(t => t.id === opt.value);
+                          if (found) setActiveWorkspace(found);
+                        }
+                        setIsMobileMenuOpen(false);
+                        playSFX("click");
+                      }}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "10px",
+                        padding: "12px",
+                        borderRadius: "12px",
+                        border: "1px solid var(--border-color)",
+                        background: (activeWorkspace === "personal" && opt.value === "personal") || (activeWorkspace !== "personal" && activeWorkspace.id === opt.value) ? "var(--primary-light)" : "var(--bg-card)",
+                        color: (activeWorkspace === "personal" && opt.value === "personal") || (activeWorkspace !== "personal" && activeWorkspace.id === opt.value) ? "var(--primary)" : "var(--text-main)",
+                        fontWeight: (activeWorkspace === "personal" && opt.value === "personal") || (activeWorkspace !== "personal" && activeWorkspace.id === opt.value) ? 700 : 500,
+                        cursor: "pointer",
+                        width: "100%",
+                        textAlign: "left"
+                      }}
+                    >
+                      <LayoutDashboard className="w-4 h-4" />
+                      <span>{opt.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                <button
+                  onClick={() => { setIsSettingsModalOpen(true); setIsMobileMenuOpen(false); playSFX("click"); }}
+                  className="btn btn-secondary"
+                  style={{ width: "100%", padding: "12px", borderRadius: "12px", justifyContent: "center" }}
+                >
+                  <SettingsIcon className="w-4 h-4" style={{ marginRight: '6px' }} />
+                  <span>{t("menuSettings") || "Settings"}</span>
+                </button>
+                
+                <button
+                  onClick={() => signOut({ callbackUrl: "/login" })}
+                  className="btn btn-danger"
+                  style={{ width: "100%", padding: "12px", borderRadius: "12px", justifyContent: "center", backgroundColor: "var(--danger)", color: "white" }}
+                >
+                  <LogOut className="w-4 h-4" style={{ marginRight: "6px" }} />
+                  <span>{t("logout") || "Logout"}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
 
 // Subcomponent: Draggable Kanban Task Card
 const DraggableDraggableTask = ({
@@ -3075,15 +3499,71 @@ const DraggableDraggableTask = ({
   onDelete,
   onToggleSubtask,
   onAddSubtask,
+  onStatusChange,
 }: {
   task: Task;
   index: number;
   onDelete: (id: string) => void;
   onToggleSubtask: (id: string, isCompleted: boolean) => void;
   onAddSubtask: (taskId: string, title: string) => void;
+  onStatusChange: (taskId: string, newStatus: string) => void;
 }) => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [subtaskTitle, setSubtaskTitle] = useState("");
+
+  // Touch Swipe States
+  const [touchStart, setTouchStart] = useState({ x: 0, y: 0 });
+  const [swipeTranslation, setSwipeTranslation] = useState(0);
+  const [swipeState, setSwipeState] = useState<"none" | "complete" | "delete">("none");
+  const [isSwiping, setIsSwiping] = useState(false);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStart({
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY,
+    });
+    setIsSwiping(true);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isSwiping) return;
+    const diffX = e.touches[0].clientX - touchStart.x;
+    const diffY = e.touches[0].clientY - touchStart.y;
+
+    if (Math.abs(diffX) > Math.abs(diffY)) {
+      if (e.cancelable) e.preventDefault();
+      
+      let translation = diffX;
+      if (task.status === "DONE" && diffX > 0) {
+        translation = diffX * 0.2;
+      }
+      setSwipeTranslation(translation);
+
+      if (translation > 50) {
+        setSwipeState("complete");
+      } else if (translation < -50) {
+        setSwipeState("delete");
+      } else {
+        setSwipeState("none");
+      }
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setIsSwiping(false);
+    
+    const threshold = 120;
+    if (swipeTranslation > threshold && task.status !== "DONE") {
+      playSFX("complete");
+      onStatusChange(task.id, "DONE");
+    } else if (swipeTranslation < -threshold) {
+      playSFX("delete");
+      onDelete(task.id);
+    } else {
+      setSwipeTranslation(0);
+      setSwipeState("none");
+    }
+  };
 
   const completedSubtasks = task.subtasks ? task.subtasks.filter((s) => s.isCompleted).length : 0;
   const totalSubtasks = task.subtasks ? task.subtasks.length : 0;
@@ -3111,154 +3591,179 @@ const DraggableDraggableTask = ({
   return (
     <Draggable draggableId={task.id} index={index}>
       {(provided, snapshot) => {
+        const isSwipedClass = isSwiping ? "swiping-card" : "swipe-reset-card";
+        const transformStyle = swipeTranslation !== 0 
+          ? { transform: `translate3d(${swipeTranslation}px, 0, 0)` } 
+          : {};
+
         const cardNode = (
-          <div
-            className={`task-card ${snapshot.isDragging ? "dragging" : ""}`}
-            ref={provided.innerRef}
-            {...provided.draggableProps}
-            {...provided.dragHandleProps}
-            style={{
-              ...provided.draggableProps.style,
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-              <span className="task-title">{task.title}</span>
-              <button
-                onClick={() => onDelete(task.id)}
-                style={{ color: "var(--danger)", border: "none", background: "none", cursor: "pointer" }}
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {task.description && <p className="task-description">{task.description}</p>}
-
-            {totalSubtasks > 0 && (
-              <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "4px" }}>
-                <CheckSquare className="w-3.5 h-3.5" />
-                <span>{completedSubtasks}/{totalSubtasks}</span>
-                <div style={{ flexGrow: 1, height: "4px", backgroundColor: "var(--border-color)", borderRadius: "2px", overflow: "hidden" }}>
-                  <div style={{ width: `${(completedSubtasks / totalSubtasks) * 100}%`, height: "100%", backgroundColor: completedSubtasks === totalSubtasks ? "var(--success)" : "var(--primary)", transition: "width 0.3s ease, background-color 0.3s ease" }} />
+          <div className="task-card-swipe-container">
+            {swipeTranslation !== 0 && (
+              <div className={`task-card-swipe-background ${swipeState}`}>
+                <div className={`task-card-swipe-icon-left ${swipeState === "complete" ? "visible" : ""}`}>
+                  <CheckSquare className="w-5 h-5" />
+                  <span>{language === "TH" ? "เสร็จสิ้น" : "Complete"}</span>
+                </div>
+                <div className={`task-card-swipe-icon-right ${swipeState === "delete" ? "visible" : ""}`}>
+                  <span>{language === "TH" ? "ลบงาน" : "Delete"}</span>
+                  <Trash2 className="w-5 h-5" />
                 </div>
               </div>
             )}
 
-            {/* Subtasks rendering */}
-            {task.subtasks && task.subtasks.length > 0 && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "4px" }}>
-                {task.subtasks.map((sub) => (
-                  <label
-                    key={sub.id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      fontSize: "0.75rem",
-                      cursor: "pointer",
-                      textDecoration: sub.isCompleted ? "line-through" : "none",
-                      color: sub.isCompleted ? "var(--text-muted)" : "var(--text-main)",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={sub.isCompleted}
-                      onChange={(e) => onToggleSubtask(sub.id, e.target.checked)}
-                      style={{ accentColor: "var(--primary)" }}
-                    />
-                    <span>{sub.title}</span>
-                  </label>
-                ))}
+            <div
+              className={`task-card ${snapshot.isDragging ? "dragging" : ""} ${isSwipedClass}`}
+              ref={provided.innerRef}
+              {...provided.draggableProps}
+              {...provided.dragHandleProps}
+              onTouchStart={handleTouchStart}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+              style={{
+                ...provided.draggableProps.style,
+                ...transformStyle,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <span className="task-title">{task.title}</span>
+                <button
+                  onClick={() => onDelete(task.id)}
+                  className="task-delete-btn"
+                  style={{ color: "var(--danger)", border: "none", background: "none", cursor: "pointer" }}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
               </div>
-            )}
 
-            {/* Quick Subtask Addition form */}
-            <form onSubmit={handleSubmitSubtask} style={{ display: "flex", gap: "6px", marginTop: "4px" }}>
-              <input
-                type="text"
-                placeholder={t("phAddSubtask")}
-                value={subtaskTitle}
-                onChange={(e) => setSubtaskTitle(e.target.value)}
-                className="form-input"
-                style={{ fontSize: "0.7rem", padding: "4px 8px", flexGrow: 1 }}
-              />
-              <button
-                type="submit"
-                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--primary)" }}
-              >
-                <PlusCircle className="w-4 h-4" />
-              </button>
-            </form>
+              {task.description && <p className="task-description">{task.description}</p>}
 
-            <div className="task-footer">
-              <span
-                className="tag-badge"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "4px",
-                  backgroundColor:
-                    task.priority === "HIGH"
-                      ? "var(--danger-light)"
-                      : task.priority === "MEDIUM"
-                        ? "var(--warning-light)"
-                        : "var(--success-light)",
-                  color:
-                    task.priority === "HIGH"
-                      ? "var(--danger)"
-                      : task.priority === "MEDIUM"
-                        ? "var(--warning)"
-                        : "var(--success)",
-                }}
-              >
-                {task.priority === "HIGH" && <AlertCircle className="w-3 h-3" />}
-                {task.priority === "MEDIUM" && <Minus className="w-3 h-3" />}
-                {task.priority === "LOW" && <ArrowDown className="w-3 h-3" />}
-                {task.priority === "HIGH" ? t("statHigh") : task.priority === "MEDIUM" ? t("statMedium") : task.priority === "LOW" ? t("statLow") : task.priority}
-              </span>
-
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                {task.dueDate && (
-                  <span style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "0.7rem", fontWeight: 500, color: dueDateColor }}>
-                    <CalendarIcon className="w-3 h-3" />
-                    {new Date(task.dueDate).toLocaleDateString()}
-                  </span>
-                )}
-
-                {task.assignee && (
-                  <div
-                    className="task-assignee-avatar"
-                    title={task.assignee.name || task.assignee.email}
-                    style={{
-                      width: "24px",
-                      height: "24px",
-                      borderRadius: "50%",
-                      overflow: "hidden",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      fontSize: "0.65rem",
-                      fontWeight: 700,
-                      background: "linear-gradient(135deg, var(--primary), var(--accent-purple))",
-                      color: "white",
-                      border: "1.5px solid var(--bg-card)",
-                      marginLeft: "4px"
-                    }}
-                  >
-                    {task.assignee.image && task.assignee.image.startsWith("http") ? (
-                      <img
-                        src={task.assignee.image}
-                        alt={task.assignee.name || "User"}
-                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                      />
-                    ) : task.assignee.image ? (
-                      <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.8rem", background: "var(--bg-card)" }}>
-                        {task.assignee.image}
-                      </div>
-                    ) : (
-                      (task.assignee.name || task.assignee.email)[0].toUpperCase()
-                    )}
+              {totalSubtasks > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "4px" }}>
+                  <CheckSquare className="w-3.5 h-3.5" />
+                  <span>{completedSubtasks}/{totalSubtasks}</span>
+                  <div style={{ flexGrow: 1, height: "4px", backgroundColor: "var(--border-color)", borderRadius: "2px", overflow: "hidden" }}>
+                    <div style={{ width: `${(completedSubtasks / totalSubtasks) * 100}%`, height: "100%", backgroundColor: completedSubtasks === totalSubtasks ? "var(--success)" : "var(--primary)", transition: "width 0.3s ease, background-color 0.3s ease" }} />
                   </div>
-                )}
+                </div>
+              )}
+
+              {/* Subtasks rendering */}
+              {task.subtasks && task.subtasks.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "4px" }}>
+                  {task.subtasks.map((sub) => (
+                    <label
+                      key={sub.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "8px",
+                        fontSize: "0.75rem",
+                        cursor: "pointer",
+                        textDecoration: sub.isCompleted ? "line-through" : "none",
+                        color: sub.isCompleted ? "var(--text-muted)" : "var(--text-main)",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={sub.isCompleted}
+                        onChange={(e) => onToggleSubtask(sub.id, e.target.checked)}
+                        style={{ accentColor: "var(--primary)" }}
+                      />
+                      <span>{sub.title}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              {/* Quick Subtask Addition form */}
+              <form onSubmit={handleSubmitSubtask} style={{ display: "flex", gap: "6px", marginTop: "4px" }}>
+                <input
+                  type="text"
+                  placeholder={t("phAddSubtask")}
+                  value={subtaskTitle}
+                  onChange={(e) => setSubtaskTitle(e.target.value)}
+                  className="form-input"
+                  style={{ fontSize: "0.7rem", padding: "4px 8px", flexGrow: 1 }}
+                />
+                <button
+                  type="submit"
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--primary)" }}
+                >
+                  <PlusCircle className="w-4 h-4" />
+                </button>
+              </form>
+
+              <div className="task-footer">
+                <span
+                  className="tag-badge"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    backgroundColor:
+                      task.priority === "HIGH"
+                        ? "var(--danger-light)"
+                        : task.priority === "MEDIUM"
+                          ? "var(--warning-light)"
+                          : "var(--success-light)",
+                    color:
+                      task.priority === "HIGH"
+                        ? "var(--danger)"
+                        : task.priority === "MEDIUM"
+                          ? "var(--warning)"
+                          : "var(--success)",
+                  }}
+                >
+                  {task.priority === "HIGH" && <AlertCircle className="w-3 h-3" />}
+                  {task.priority === "MEDIUM" && <Minus className="w-3 h-3" />}
+                  {task.priority === "LOW" && <ArrowDown className="w-3 h-3" />}
+                  {task.priority === "HIGH" ? t("statHigh") : task.priority === "MEDIUM" ? t("statMedium") : task.priority === "LOW" ? t("statLow") : task.priority}
+                </span>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  {task.dueDate && (
+                    <span style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "0.7rem", fontWeight: 500, color: dueDateColor }}>
+                      <CalendarIcon className="w-3 h-3" />
+                      {new Date(task.dueDate).toLocaleDateString()}
+                    </span>
+                  )}
+
+                  {task.assignee && (
+                    <div
+                      className="task-assignee-avatar"
+                      title={task.assignee.name || task.assignee.email}
+                      style={{
+                        width: "24px",
+                        height: "24px",
+                        borderRadius: "50%",
+                        overflow: "hidden",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: "0.65rem",
+                        fontWeight: 700,
+                        background: "linear-gradient(135deg, var(--primary), var(--accent-purple))",
+                        color: "white",
+                        border: "1.5px solid var(--bg-card)",
+                        marginLeft: "4px"
+                      }}
+                    >
+                      {task.assignee.image && task.assignee.image.startsWith("http") ? (
+                        <img
+                          src={task.assignee.image}
+                          alt={task.assignee.name || "User"}
+                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                        />
+                      ) : task.assignee.image ? (
+                        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.8rem", background: "var(--bg-card)" }}>
+                          {task.assignee.image}
+                        </div>
+                      ) : (
+                        (task.assignee.name || task.assignee.email)[0].toUpperCase()
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>

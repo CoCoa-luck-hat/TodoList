@@ -11,6 +11,7 @@ export type TranslationKey =
   | "menuKanban"
   | "menuCalendar"
   | "menuChat"
+  | "menuSettings"
   | "menuStats"
   | "pomodoroFocus"
   | "pomodoroBreak"
@@ -96,14 +97,15 @@ const translations: Record<Language, Record<TranslationKey, string>> = {
   EN: {
     brandName: "Todo Dashboard",
     menuOverview: "Overview",
-    menuKanban: "Kanban Board",
+    menuKanban: "Task Board",
     menuCalendar: "Calendar",
     menuChat: "Chat Room",
+    menuSettings: "Settings",
     menuStats: "Stats",
     pomodoroFocus: "Focus Session",
     pomodoroBreak: "Break Time",
     titleOverview: "Dashboard Overview",
-    titleKanban: "Kanban Board Manager",
+    titleKanban: "Task Board",
     titleCalendar: "Interactive Calendar",
     titleChat: "Team Message Feed",
     titleStats: "Productivity Statistics",
@@ -179,14 +181,15 @@ const translations: Record<Language, Record<TranslationKey, string>> = {
   TH: {
     brandName: "แดชบอร์ดงาน",
     menuOverview: "ภาพรวม",
-    menuKanban: "บอร์ดคัมบัง",
+    menuKanban: "กระดานงาน",
     menuCalendar: "ปฏิทิน",
     menuChat: "ห้องแชตทีม",
+    menuSettings: "ตั้งค่า",
     menuStats: "สถิติ",
     pomodoroFocus: "ช่วงเวลาโฟกัส",
     pomodoroBreak: "ช่วงพักผ่อน",
     titleOverview: "ภาพรวมแดชบอร์ด",
-    titleKanban: "บอร์ดจัดการงาน",
+    titleKanban: "กระดานงาน",
     titleCalendar: "ปฏิทินกิจกรรม",
     titleChat: "ห้องสนทนาของทีม",
     titleStats: "ข้อมูลเชิงสถิติ",
