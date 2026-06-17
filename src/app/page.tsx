@@ -2231,7 +2231,7 @@ export default function Dashboard() {
               const doneCount = filteredTasks.filter((t) => t.status === "DONE").length;
 
               return isDataLoading ? <KanbanSkeleton /> : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px", height: "100%", width: "100%" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", height: "100%", width: "100%", minHeight: 0 }}>
                   {activeWorkspace !== "personal" && (
                     <div className="kanban-filter-bar" style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "12px", padding: "24px 32px 0 32px" }}>
                       <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-muted)" }}>
