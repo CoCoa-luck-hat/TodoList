@@ -16,17 +16,13 @@ interface NotificationPayload {
 
 export async function sendNotifications(payload: NotificationPayload) {
   try {
-    // 1. Fetch active settings
+    // 1. Fetch active settings (with graceful fallback if not initialized in database)
     const settings = await prisma.setting.findUnique({
       where: { id: "default" },
     });
 
-    if (!settings) {
-      console.warn("Notification settings not found in database.");
-      return;
-    }
-
-    const { lineToken, emailRecipient } = settings;
+    const lineToken = settings?.lineToken || process.env.LINE_CHANNEL_ACCESS_TOKEN;
+    const emailRecipient = settings?.emailRecipient || "";
 
     // 2. Trigger LINE Message if token exists
     if (lineToken) {

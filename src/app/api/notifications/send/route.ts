@@ -108,19 +108,333 @@ async function sendNotificationToUser(
         const { messagingApi } = require("@line/bot-sdk");
         const client = new messagingApi.MessagingApiClient({ channelAccessToken });
         
-        let messageText = "New Notification!";
+        let messagePayload: any = { type: "text", text: "New Notification!" };
+
         if (type === "TASK_ASSIGNED") {
-          messageText = `📝 You have a new task assigned by ${data.assignedBy}:\n"${data.taskTitle}"\n${data.dueDate ? `Due: ${new Date(data.dueDate).toLocaleDateString()}\n` : ""}Link: ${appLink}`;
+          messagePayload = {
+            type: "flex",
+            altText: `📌 มอบหมายงานใหม่: ${data.taskTitle}`,
+            contents: {
+              type: "bubble",
+              header: {
+                type: "box",
+                layout: "vertical",
+                backgroundColor: "#4F46E5",
+                paddingAll: "16px",
+                contents: [
+                  {
+                    type: "text",
+                    text: "📝 มอบหมายงานใหม่",
+                    weight: "bold",
+                    color: "#FFFFFF",
+                    size: "md"
+                  }
+                ]
+              },
+              body: {
+                type: "box",
+                layout: "vertical",
+                spacing: "md",
+                paddingAll: "20px",
+                contents: [
+                  {
+                    type: "text",
+                    text: data.taskTitle || "ไม่มีชื่อโครงการ",
+                    weight: "bold",
+                    size: "md",
+                    color: "#111827",
+                    wrap: true
+                  },
+                  {
+                    type: "separator",
+                    color: "#E5E7EB"
+                  },
+                  {
+                    type: "box",
+                    layout: "vertical",
+                    spacing: "xs",
+                    contents: [
+                      {
+                        type: "box",
+                        layout: "horizontal",
+                        contents: [
+                          {
+                            type: "text",
+                            text: "ผู้มอบหมาย:",
+                            color: "#6B7280",
+                            size: "sm",
+                            flex: 2
+                          },
+                          {
+                            type: "text",
+                            text: data.assignedBy || "ระบบ",
+                            weight: "bold",
+                            color: "#4B5563",
+                            size: "sm",
+                            flex: 3
+                          }
+                        ]
+                      },
+                      {
+                        type: "box",
+                        layout: "horizontal",
+                        contents: [
+                          {
+                            type: "text",
+                            text: "กำหนดส่ง:",
+                            color: "#6B7280",
+                            size: "sm",
+                            flex: 2
+                          },
+                          {
+                            type: "text",
+                            text: data.dueDate ? new Date(data.dueDate).toLocaleDateString("th-TH") : "ไม่ระบุ",
+                            weight: "bold",
+                            color: "#4B5563",
+                            size: "sm",
+                            flex: 3
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              footer: {
+                type: "box",
+                layout: "vertical",
+                paddingAll: "16px",
+                contents: [
+                  {
+                    type: "button",
+                    style: "primary",
+                    color: "#4F46E5",
+                    height: "sm",
+                    action: {
+                      type: "uri",
+                      label: "เปิดดูงาน",
+                      uri: appLink
+                    }
+                  }
+                ]
+              }
+            }
+          };
         } else if (type === "DEADLINE") {
-          messageText = `🚨 Deadline Reminder!\nYour task "${data.taskTitle}" is due soon.\n${data.dueDate ? `Due: ${new Date(data.dueDate).toLocaleDateString()}\n` : ""}Link: ${appLink}`;
+          messagePayload = {
+            type: "flex",
+            altText: `⏰ งานใกล้ครบกำหนดส่ง: ${data.taskTitle}`,
+            contents: {
+              type: "bubble",
+              header: {
+                type: "box",
+                layout: "vertical",
+                backgroundColor: "#EF4444",
+                paddingAll: "16px",
+                contents: [
+                  {
+                    type: "text",
+                    text: "⏰ แจ้งเตือนครบกำหนดส่ง",
+                    weight: "bold",
+                    color: "#FFFFFF",
+                    size: "md"
+                  }
+                ]
+              },
+              body: {
+                type: "box",
+                layout: "vertical",
+                spacing: "md",
+                paddingAll: "20px",
+                contents: [
+                  {
+                    type: "text",
+                    text: data.taskTitle || "งานที่มอบหมาย",
+                    weight: "bold",
+                    size: "md",
+                    color: "#111827",
+                    wrap: true
+                  },
+                  {
+                    type: "separator",
+                    color: "#E5E7EB"
+                  },
+                  {
+                    type: "box",
+                    layout: "horizontal",
+                    contents: [
+                      {
+                        type: "text",
+                        text: "กำหนดส่ง:",
+                        color: "#6B7280",
+                        size: "sm",
+                        flex: 2
+                      },
+                      {
+                        type: "text",
+                        text: data.dueDate ? new Date(data.dueDate).toLocaleDateString("th-TH", { day: 'numeric', month: 'long', year: 'numeric' }) : "วันนี้",
+                        weight: "bold",
+                        color: "#EF4444",
+                        size: "sm",
+                        flex: 3
+                      }
+                    ]
+                  }
+                ]
+              },
+              footer: {
+                type: "box",
+                layout: "vertical",
+                paddingAll: "16px",
+                contents: [
+                  {
+                    type: "button",
+                    style: "primary",
+                    color: "#EF4444",
+                    height: "sm",
+                    action: {
+                      type: "uri",
+                      label: "เปิดดูบอร์ดงาน",
+                      uri: appLink
+                    }
+                  }
+                ]
+              }
+            }
+          };
         } else if (type === "DAILY_REPORT") {
-          messageText = `📊 Daily Report from ${data.userName}:\n\n${data.reportMessage}\n\nCompleted: ${data.completedTasks?.length || 0} tasks.`;
+          const completedCount = data.completedTasks?.length || 0;
+          messagePayload = {
+            type: "flex",
+            altText: `📊 รายงานสถานะประจำวันของ ${data.userName}`,
+            contents: {
+              type: "bubble",
+              header: {
+                type: "box",
+                layout: "vertical",
+                backgroundColor: "#6366F1",
+                paddingAll: "16px",
+                contents: [
+                  {
+                    type: "text",
+                    text: "📊 DAILY STATUS REPORT",
+                    weight: "bold",
+                    color: "#FFFFFF",
+                    size: "md",
+                    align: "center"
+                  }
+                ]
+              },
+              body: {
+                type: "box",
+                layout: "vertical",
+                spacing: "md",
+                paddingAll: "20px",
+                contents: [
+                  {
+                    type: "box",
+                    layout: "horizontal",
+                    contents: [
+                      {
+                        type: "text",
+                        text: "ผู้ส่งรายงาน:",
+                        color: "#6B7280",
+                        size: "sm",
+                        flex: 2
+                      },
+                      {
+                        type: "text",
+                        text: data.userName || "ผู้ใช้",
+                        weight: "bold",
+                        color: "#111827",
+                        size: "sm",
+                        flex: 3
+                      }
+                    ]
+                  },
+                  {
+                    type: "separator",
+                    color: "#E5E7EB"
+                  },
+                  {
+                    type: "text",
+                    text: "📝 รายละเอียดอัปเดตงาน:",
+                    weight: "bold",
+                    size: "sm",
+                    color: "#374151"
+                  },
+                  {
+                    type: "box",
+                    layout: "vertical",
+                    backgroundColor: "#F9FAFB",
+                    paddingAll: "12px",
+                    cornerRadius: "8px",
+                    borderWidth: "1px",
+                    borderColor: "#E5E7EB",
+                    contents: [
+                      {
+                        type: "text",
+                        text: data.reportMessage || "ไม่มีรายละเอียดระบุไว้",
+                        wrap: true,
+                        size: "sm",
+                        color: "#4B5563"
+                      }
+                    ]
+                  },
+                  {
+                    type: "separator",
+                    color: "#E5E7EB"
+                  },
+                  {
+                    type: "box",
+                    layout: "horizontal",
+                    contents: [
+                      {
+                        type: "text",
+                        text: "งานที่เสร็จวันนี้:",
+                        color: "#6B7280",
+                        size: "sm",
+                        flex: 2
+                      },
+                      {
+                        type: "text",
+                        text: `${completedCount} งาน`,
+                        weight: "bold",
+                        color: completedCount > 0 ? "#10B981" : "#EF4444",
+                        size: "sm",
+                        flex: 1,
+                        align: "end"
+                      }
+                    ]
+                  }
+                ]
+              },
+              footer: {
+                type: "box",
+                layout: "vertical",
+                paddingAll: "16px",
+                contents: [
+                  {
+                    type: "button",
+                    style: "primary",
+                    color: "#6366F1",
+                    height: "sm",
+                    action: {
+                      type: "uri",
+                      label: "เปิดดูบอร์ดงาน",
+                      uri: appLink
+                    }
+                  }
+                ]
+              }
+            }
+          };
         }
 
         emailPromises.push(
           client.pushMessage({
             to: targetUser.lineUserId,
-            messages: [{ type: "text", text: messageText }]
+            messages: [messagePayload]
           })
         );
       } else {
