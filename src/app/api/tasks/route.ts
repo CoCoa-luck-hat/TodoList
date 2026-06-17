@@ -81,9 +81,9 @@ export async function GET(request: Request) {
 
       return NextResponse.json({ projects, unassignedTasks });
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error("GET Tasks error:", error);
-    return NextResponse.json({ error: "Failed to fetch tasks" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to fetch tasks", details: error.message }, { status: 500 });
   }
 }
 
@@ -315,6 +315,39 @@ export async function PUT(request: Request) {
       }
 
       return NextResponse.json(task);
+    }
+
+    if (actionType === "project") {
+      const { id, name, color } = body;
+      const originalProject = await prisma.project.findFirst({
+        where: {
+          id,
+          OR: [
+            { userId },
+            {
+              team: {
+                members: {
+                  some: { userId },
+                },
+              },
+            },
+          ],
+        },
+      });
+
+      if (!originalProject) {
+        return NextResponse.json({ error: "Project not found or unauthorized" }, { status: 404 });
+      }
+
+      const project = await prisma.project.update({
+        where: { id },
+        data: {
+          name: name !== undefined ? name : originalProject.name,
+          color: color !== undefined ? color : originalProject.color,
+        },
+      });
+
+      return NextResponse.json(project);
     }
 
     if (actionType === "subtask") {

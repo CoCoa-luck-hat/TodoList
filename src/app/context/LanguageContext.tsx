@@ -91,7 +91,20 @@ export type TranslationKey =
   | "statusInProgress"
   | "statusDone"
   | "toastMovedTo"
-  | "logout";
+  | "logout"
+  | "completedTasksByProject"
+  | "noCompletedTasksProject"
+  | "modalEditProject"
+  | "modalEditTask"
+  | "manageProjects"
+  | "toastProjectUpdated"
+  | "toastTaskUpdated"
+  | "toastProjectDeleted"
+  | "confirmDeleteProjectTitle"
+  | "confirmDeleteProject"
+  | "subtaskTitle"
+  | "confirmLogoutTitle"
+  | "confirmLogoutDesc";
 
 const translations: Record<Language, Record<TranslationKey, string>> = {
   EN: {
@@ -177,6 +190,19 @@ const translations: Record<Language, Record<TranslationKey, string>> = {
     statusDone: "Completed",
     toastMovedTo: "Moved to",
     logout: "Logout",
+    completedTasksByProject: "Completed Tasks by Project",
+    noCompletedTasksProject: "No completed tasks yet. Mark tasks as Completed to see statistics.",
+    modalEditProject: "Edit Project",
+    modalEditTask: "Edit Task",
+    manageProjects: "Manage All Projects",
+    toastProjectUpdated: "Project updated successfully!",
+    toastTaskUpdated: "Task updated successfully!",
+    toastProjectDeleted: "Project deleted successfully!",
+    confirmDeleteProjectTitle: "Confirm Delete Project",
+    confirmDeleteProject: "Are you sure you want to delete this project? All tasks associated with this project will be permanently deleted!",
+    subtaskTitle: "Subtasks",
+    confirmLogoutTitle: "Confirm Logout",
+    confirmLogoutDesc: "Are you sure you want to log out of your account?",
   },
   TH: {
     brandName: "แดชบอร์ดงาน",
@@ -261,6 +287,19 @@ const translations: Record<Language, Record<TranslationKey, string>> = {
     statusDone: "เสร็จสิ้น",
     toastMovedTo: "ย้ายไปยัง",
     logout: "ออกจากระบบ",
+    completedTasksByProject: "สัดส่วนงานที่เสร็จสิ้นแยกตามโปรเจกต์",
+    noCompletedTasksProject: "ยังไม่มีงานที่เสร็จสมบูรณ์ ทำงานให้เสร็จเพื่อเริ่มดูข้อมูลสถิติ",
+    modalEditProject: "แก้ไขข้อมูลโครงการ",
+    modalEditTask: "แก้ไขข้อมูลงาน",
+    manageProjects: "จัดการโครงการทั้งหมด",
+    toastProjectUpdated: "อัปเดตโครงการสำเร็จแล้ว!",
+    toastTaskUpdated: "อัปเดตงานเรียบร้อยแล้ว!",
+    toastProjectDeleted: "ลบโครงการเรียบร้อยแล้ว!",
+    confirmDeleteProjectTitle: "ยืนยันการลบโครงการ",
+    confirmDeleteProject: "คุณแน่ใจหรือไม่ว่าต้องการลบโครงการนี้? งานทั้งหมดที่เกี่ยวข้องกับโครงการนี้จะถูกลบออกด้วยอย่างถาวร!",
+    subtaskTitle: "งานย่อย",
+    confirmLogoutTitle: "ยืนยันการออกจากระบบ",
+    confirmLogoutDesc: "คุณแน่ใจหรือไม่ว่าต้องการออกจากระบบบัญชีของคุณ?",
   },
 };
 

@@ -15,6 +15,7 @@ import {
   Sun,
   Plus,
   Trash2,
+  Pencil,
   Play,
   Square,
   RotateCcw,
@@ -39,11 +40,13 @@ import {
   CheckSquare,
   AlertCircle,
   ArrowDown,
+  ArrowRight,
   Minus,
   User,
   Circle,
   CircleDashed,
-  Search
+  Search,
+  Globe
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -54,7 +57,10 @@ import {
   Tooltip,
   BarChart,
   Bar,
-  Cell
+  Cell,
+  PieChart,
+  Pie,
+  Legend
 } from "recharts";
 import { DragDropContext, Droppable, Draggable, DropResult } from "@hello-pangea/dnd";
 import { useToast } from "./context/ToastContext";
@@ -221,6 +227,17 @@ const StatsSkeleton = () => (
         <div className="skeleton-pulse-shape" style={{ width: "100%", height: "80%", borderRadius: "var(--radius-md)" }} />
       </div>
     ))}
+    <div className="card skeleton-shimmer" style={{ gridColumn: "span 4", minHeight: "350px" }}>
+      <div className="skeleton-pulse-shape" style={{ width: "220px", height: "24px", marginBottom: "24px" }} />
+      <div style={{ display: "flex", gap: "32px", height: "80%", alignItems: "center" }}>
+        <div className="skeleton-pulse-shape" style={{ width: "200px", height: "200px", borderRadius: "50%" }} />
+        <div style={{ display: "flex", flexDirection: "column", gap: "16px", flexGrow: 1 }}>
+          <div className="skeleton-pulse-shape" style={{ width: "80%", height: "20px" }} />
+          <div className="skeleton-pulse-shape" style={{ width: "60%", height: "20px" }} />
+          <div className="skeleton-pulse-shape" style={{ width: "70%", height: "20px" }} />
+        </div>
+      </div>
+    </div>
   </div>
 );
 
@@ -427,6 +444,23 @@ const ColorPickerInput = ({
   );
 };
 
+// Premium Custom Tooltip for Recharts
+const CustomTooltip = ({ active, payload, label }: any) => {
+  const { language } = useLanguage();
+  if (active && payload && payload.length) {
+    return (
+      <div className="custom-chart-tooltip">
+        <p className="custom-chart-tooltip-label">{label}</p>
+        <p className="custom-chart-tooltip-value">
+          <span className="custom-chart-tooltip-indicator" style={{ backgroundColor: payload[0].fill || payload[0].color || "var(--primary)" }}></span>
+          {language === "TH" ? "จำนวนงาน" : "Tasks"}: <strong>{payload[0].value}</strong>
+        </p>
+      </div>
+    );
+  }
+  return null;
+};
+
 export default function Dashboard() {
   const { showToast } = useToast();
   const { language, setLanguage, t } = useLanguage();
@@ -535,6 +569,7 @@ export default function Dashboard() {
 
   // Navigation State
   const [activeView, setActiveView] = useState<"overview" | "projects" | "calendar" | "chat" | "stats">("overview");
+  const [activeKanbanTab, setActiveKanbanTab] = useState<"TODO" | "IN_PROGRESS" | "DONE">("TODO");
   const activeViewRef = useRef(activeView);
   useEffect(() => { activeViewRef.current = activeView; }, [activeView]);
   const sessionRef = useRef(session);
@@ -561,6 +596,9 @@ export default function Dashboard() {
   const [isTeamSettingsModalOpen, setIsTeamSettingsModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobileFabOpen, setIsMobileFabOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
 
   // Form Field States
   const [newProjectName, setNewProjectName] = useState("");
@@ -1019,44 +1057,107 @@ export default function Dashboard() {
     }
   };
 
-  // Add Project
-  const handleAddProject = async (e: React.FormEvent) => {
+  // Open Edit Task Modal
+  const openEditTaskModal = (task: Task) => {
+    setEditingTask(task);
+    setNewTaskTitle(task.title);
+    setNewTaskDesc(task.description || "");
+    setNewTaskPriority(task.priority);
+    setNewTaskDueDate(task.dueDate ? new Date(task.dueDate).toISOString().split("T")[0] : "");
+    setNewTaskProjectId(task.projectId || "");
+    setNewTaskAssigneeId(task.assigneeId || "");
+    setIsTaskModalOpen(true);
+    playSFX("click");
+  };
+
+  // Select Project for Edit
+  const selectProjectForEdit = (project: Project) => {
+    setEditingProject(project);
+    setNewProjectName(project.name);
+    setNewProjectColor(project.color);
+    playSFX("click");
+  };
+
+  // Clear Project Form
+  const clearProjectForm = () => {
+    setEditingProject(null);
+    setNewProjectName("");
+    setNewProjectColor("#6366f1");
+  };
+
+  // Submit Project (Add/Edit)
+  const handleSubmitProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProjectName.trim()) return;
 
     try {
+      const isEditing = !!editingProject;
+      const url = "/api/tasks";
+      const method = isEditing ? "PUT" : "POST";
       const payload: any = {
         actionType: "project",
         name: newProjectName,
         color: newProjectColor,
       };
+      if (isEditing) {
+        payload.id = editingProject.id;
+      }
       if (activeWorkspace !== "personal") {
         payload.teamId = activeWorkspace.id;
       }
-      const res = await fetch("/api/tasks", {
-        method: "POST",
+      
+      const res = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
       if (res.ok) {
         setNewProjectName("");
+        setNewProjectColor("#6366f1");
+        setEditingProject(null);
         setIsProjectModalOpen(false);
         fetchData();
-        showToast(t("toastProjectCreated"));
+        showToast(isEditing ? t("toastProjectUpdated") : t("toastProjectCreated"));
         playSFX("click");
       }
     } catch (error) {
-      console.error("Error creating project:", error);
+      console.error("Error submitting project:", error);
     }
   };
 
-  // Add Task
-  const handleAddTask = async (e: React.FormEvent) => {
+  // Delete Project
+  const handleDeleteProject = async (id: string) => {
+    const confirmMsg = t("confirmDeleteProject") || "Are you sure you want to delete this project? All tasks associated with this project will be permanently deleted!";
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      const res = await fetch(`/api/tasks?id=${id}&type=project`, {
+        method: "DELETE",
+      });
+
+      if (res.ok) {
+        fetchData();
+        showToast(t("toastProjectDeleted"), "info");
+        playSFX("delete");
+        if (editingProject?.id === id) {
+          clearProjectForm();
+        }
+      }
+    } catch (error) {
+      console.error("Error deleting project:", error);
+    }
+  };
+
+  // Submit Task (Add/Edit)
+  const handleSubmitTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
 
     try {
+      const isEditing = !!editingTask;
+      const url = "/api/tasks";
+      const method = isEditing ? "PUT" : "POST";
       const payload: any = {
         actionType: "task",
         title: newTaskTitle,
@@ -1065,12 +1166,16 @@ export default function Dashboard() {
         dueDate: newTaskDueDate || null,
         projectId: newTaskProjectId || null,
       };
+      if (isEditing) {
+        payload.id = editingTask.id;
+      }
       if (activeWorkspace !== "personal") {
         payload.teamId = activeWorkspace.id;
         payload.assigneeId = newTaskAssigneeId || null;
       }
-      const res = await fetch("/api/tasks", {
-        method: "POST",
+      
+      const res = await fetch(url, {
+        method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
@@ -1081,13 +1186,30 @@ export default function Dashboard() {
         setNewTaskDueDate("");
         setNewTaskProjectId("");
         setNewTaskAssigneeId("");
+        setEditingTask(null);
         setIsTaskModalOpen(false);
         fetchData();
-        showToast(t("toastTaskCreated"));
+        showToast(isEditing ? t("toastTaskUpdated") : t("toastTaskCreated"));
         playSFX("click");
       }
     } catch (error) {
-      console.error("Error creating task:", error);
+      console.error("Error submitting task:", error);
+    }
+  };
+
+  // Delete Subtask
+  const handleDeleteSubtask = async (subtaskId: string) => {
+    try {
+      const res = await fetch(`/api/tasks?id=${subtaskId}&type=subtask`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        fetchData(true);
+        showToast(language === "TH" ? "ลบงานย่อยสำเร็จ" : "Subtask deleted");
+        playSFX("delete");
+      }
+    } catch (err) {
+      console.error("Error deleting subtask:", err);
     }
   };
 
@@ -1438,6 +1560,71 @@ export default function Dashboard() {
 
   return (
     <>
+      <style>{`
+        .custom-chart-tooltip {
+          background-color: rgba(255, 255, 255, 0.85);
+          backdrop-filter: blur(12px) saturate(180%);
+          -webkit-backdrop-filter: blur(12px) saturate(180%);
+          border: 1px solid var(--border-color);
+          border-radius: var(--radius-md);
+          padding: 10px 14px;
+          box-shadow: var(--shadow-md);
+          pointer-events: none;
+          z-index: 100;
+          transition: all 0.1s ease;
+        }
+        [data-theme="dark"] .custom-chart-tooltip {
+          background-color: rgba(30, 41, 59, 0.85);
+          border-color: rgba(255, 255, 255, 0.08);
+        }
+        .custom-chart-tooltip-label {
+          font-family: var(--font-outfit);
+          font-size: 0.825rem;
+          font-weight: 700;
+          color: var(--text-main);
+          margin-bottom: 4px;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+        .custom-chart-tooltip-value {
+          font-size: 0.85rem;
+          color: var(--text-muted);
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+        .custom-chart-tooltip-indicator {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          display: inline-block;
+        }
+        .donut-legend-item {
+          background-color: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: var(--radius-md);
+          padding: 12px 16px;
+          transition: all 0.2s ease-in-out;
+        }
+        .donut-legend-item:hover {
+          transform: translateX(4px);
+          border-color: var(--primary);
+          box-shadow: var(--shadow-sm);
+        }
+        [data-theme="dark"] .donut-legend-item {
+          border-color: rgba(255, 255, 255, 0.05);
+        }
+        [data-theme="dark"] .donut-legend-item:hover {
+          border-color: var(--primary);
+        }
+        @media (max-width: 768px) {
+          .stats-donut-container {
+            flex-direction: column !important;
+            align-items: stretch !important;
+            gap: 20px !important;
+          }
+        }
+      `}</style>
       {isFirstLoad && (
         <div className={`entrance-loader-overlay ${isExitingFirstLoad ? "exit" : ""}`}>
           <div className="entrance-logo-container">
@@ -1451,7 +1638,9 @@ export default function Dashboard() {
           </div>
         </div>
       )}
-      <div className="app-container">
+      <div 
+        className="app-container"
+      >
         {/* MOBILE TOPBAR HEADER */}
         <header className="mobile-header" style={{ display: "none" }}>
           <div className="mobile-header-title">
@@ -1459,14 +1648,6 @@ export default function Dashboard() {
             <span>{t("brandName")}</span>
           </div>
           <div className="mobile-header-actions">
-            <button
-              onClick={() => { setLanguage(language === "TH" ? "EN" : "TH"); playSFX("toggle"); }}
-              className="btn btn-secondary"
-              style={{ fontWeight: 700, fontSize: "0.75rem", padding: "6px 10px", minWidth: "auto", border: "1px solid var(--border-color)", background: "var(--bg-card)" }}
-            >
-              {language}
-            </button>
-            
             {/* Profile Avatar triggers Workspace Switcher Bottom Sheet */}
             <div onClick={() => { setIsMobileMenuOpen(true); playSFX("click"); }} style={{ cursor: "pointer" }}>
               {userProfile?.image && userProfile.image.startsWith("http") ? (
@@ -1651,7 +1832,7 @@ export default function Dashboard() {
                 <div className="profile-email">{userProfile?.email || session?.user?.email}</div>
               </div>
             </div>
-            <button onClick={() => signOut({ callbackUrl: "/login" })} className="btn-logout" title={t("logout") || "Logout"}>
+            <button onClick={() => { setIsLogoutConfirmOpen(true); playSFX("click"); }} className="btn-logout" title={t("logout") || "Logout"}>
               <LogOut className="w-5 h-5" />
             </button>
           </div>
@@ -1693,7 +1874,7 @@ export default function Dashboard() {
               {/* Pomodoro Visibility Toggle */}
               <button
                 onClick={() => { setIsPomodoroVisible(!isPomodoroVisible); playSFX("click"); }}
-                className={`btn ${isPomodoroVisible ? 'btn-primary' : 'btn-secondary'}`}
+                className={`btn pomodoro-toggle-btn ${isPomodoroVisible ? 'btn-primary' : 'btn-secondary'}`}
                 style={{ padding: "8px" }}
                 title={isPomodoroVisible ? "Hide Focus Session" : "Show Focus Session"}
               >
@@ -1760,7 +1941,7 @@ export default function Dashboard() {
                               strokeDasharray={circumference} strokeDashoffset={strokeDashoffset} 
                               style={{ transition: "stroke-dashoffset 0.5s ease-in-out" }} strokeLinecap="round" />
                           </svg>
-                          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.75rem", fontWeight: "bold", color: "var(--text-main)" }}>
+                          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.65rem", fontWeight: 700, color: color }}>
                             {rate}%
                           </div>
                         </div>
@@ -1770,7 +1951,7 @@ export default function Dashboard() {
                     const watermarkStyle = { position: "absolute" as const, right: "-10px", bottom: "-15px", opacity: 0.04, transform: "rotate(-15deg)", pointerEvents: "none" as const, zIndex: 0 };
                     const cardStyle = { position: "relative" as const, overflow: "hidden" as const, display: "flex" as const, flexDirection: "column" as const };
                     const metricsContainerStyle = { display: "flex", gap: "12px", paddingTop: "4px", marginTop: "auto", zIndex: 1, position: "relative" as const };
-                    const getMetricStyle = (baseColor: string) => ({ display: "flex", flexDirection: "column" as const, gap: "2px", flex: 1, backgroundColor: `color-mix(in srgb, ${baseColor} 10%, transparent)`, padding: "10px 14px", borderRadius: "12px" });
+                    const getMetricStyle = (baseColor: string) => ({ display: "flex", flexDirection: "column" as const, gap: "2px", flex: 1, backgroundColor: `color-mix(in srgb, ${baseColor} 5%, transparent)`, padding: "10px 14px", borderRadius: "12px" });
                     const metricValueStyle = { fontSize: "1.125rem", fontWeight: 700 };
 
                     return (
@@ -1876,49 +2057,124 @@ export default function Dashboard() {
                           </p>
                         </div>
                       ) : (
-                        getAllTasks().slice(-5).map((task) => (
-                          <div
-                            key={task.id}
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "center",
-                              padding: "12px",
-                              backgroundColor: "var(--bg-input)",
-                              borderRadius: "var(--radius-md)",
-                              border: "1px solid var(--border-color)"
-                            }}
-                          >
-                            <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>{task.title}</span>
-                            <div style={{ display: "flex", gap: "8px" }}>
-                              <span
-                                className="tag-badge"
-                                style={{
-                                  backgroundColor:
-                                    task.status === "DONE"
-                                      ? "var(--success-light)"
-                                      : task.status === "IN_PROGRESS"
-                                        ? "var(--warning-light)"
-                                        : "var(--border-color)",
-                                  color:
-                                    task.status === "DONE"
-                                      ? "var(--success)"
-                                      : task.status === "IN_PROGRESS"
-                                        ? "var(--warning)"
-                                        : "var(--text-main)",
-                                }}
-                              >
-                                {task.status === "TODO" ? t("statusTodo") : task.status === "IN_PROGRESS" ? t("statusInProgress") : task.status === "DONE" ? t("statusDone") : task.status}
-                              </span>
-                              <button
-                                onClick={() => handleDeleteTask(task.id)}
-                                style={{ color: "var(--danger)", border: "none", background: "none", cursor: "pointer" }}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                        getAllTasks().slice().reverse().slice(0, 5).map((task) => {
+                          const project = projects.find(p => p.id === task.projectId);
+                          const projectName = project ? project.name : (language === "TH" ? "ไม่มีโปรเจกต์" : "No Project");
+                          const projectColor = project ? project.color : "#6b7280";
+                          const isCompleted = task.status === "DONE";
+                          
+                          const totalSubtasks = task.subtasks?.length || 0;
+                          const completedSubtasks = task.subtasks?.filter((s) => s.isCompleted).length || 0;
+                          
+                          const handleToggleComplete = (e: React.MouseEvent) => {
+                            e.stopPropagation();
+                            const newStatus = isCompleted ? "TODO" : "DONE";
+                            if (newStatus === "DONE") {
+                              playSFX("complete");
+                            } else {
+                              playSFX("click");
+                            }
+                            handleUpdateTaskStatus(task.id, newStatus);
+                          };
+                          
+                          return (
+                            <div
+                              key={task.id}
+                              className={`recent-task-row ${isCompleted ? "completed" : ""}`}
+                              style={{
+                                "--task-priority-color": task.priority === "HIGH" ? "var(--danger)" : task.priority === "MEDIUM" ? "var(--warning)" : "var(--success)"
+                              } as any}
+                            >
+                              {/* Left column: Checkbox + Title + Description + Meta */}
+                              <div className="recent-task-main">
+                                <button
+                                  className="recent-task-checkbox"
+                                  onClick={handleToggleComplete}
+                                  title={isCompleted ? (language === "TH" ? "ทำเครื่องหมายว่ายังไม่เสร็จ" : "Mark as uncompleted") : (language === "TH" ? "ทำเครื่องหมายว่าเสร็จสิ้น" : "Mark as completed")}
+                                >
+                                  {isCompleted ? (
+                                    <CheckCircle className="w-4 h-4 text-success" />
+                                  ) : (
+                                    <Circle className="w-4 h-4" />
+                                  )}
+                                </button>
+                                
+                                <div className="recent-task-content">
+                                  <div className="recent-task-header">
+                                    <span className="recent-task-title">{task.title}</span>
+                                    <span
+                                      className="recent-task-project-badge"
+                                      style={{
+                                        backgroundColor: projectColor + "15",
+                                        color: projectColor,
+                                        border: `1px solid ${projectColor}30`
+                                      }}
+                                    >
+                                      {projectName}
+                                    </span>
+                                  </div>
+                                  
+                                  {task.description && (
+                                    <p className="recent-task-desc">{task.description}</p>
+                                  )}
+                                  
+                                  {/* Meta: Date & Subtasks progress */}
+                                  <div className="recent-task-meta">
+                                    {task.dueDate && (
+                                      <span className="recent-task-meta-item">
+                                        <CalendarIcon className="w-3 h-3" />
+                                        {new Date(task.dueDate).toLocaleDateString()}
+                                      </span>
+                                    )}
+                                    {totalSubtasks > 0 && (
+                                      <span className="recent-task-meta-item">
+                                        <CheckSquare className="w-3 h-3" />
+                                        {completedSubtasks}/{totalSubtasks} {language === "TH" ? "งานย่อย" : "subtasks"}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              {/* Right column: Status Pill & Actions */}
+                              <div className="recent-task-actions">
+                                <span
+                                  className="recent-task-status-badge"
+                                  style={{
+                                    backgroundColor:
+                                      task.status === "DONE"
+                                        ? "var(--success-light)"
+                                        : task.status === "IN_PROGRESS"
+                                          ? "var(--warning-light)"
+                                          : "var(--border-color)",
+                                    color:
+                                      task.status === "DONE"
+                                        ? "var(--success)"
+                                        : task.status === "IN_PROGRESS"
+                                          ? "var(--warning)"
+                                          : "var(--text-main)",
+                                  }}
+                                >
+                                  {task.status === "TODO" ? t("statusTodo") : task.status === "IN_PROGRESS" ? t("statusInProgress") : task.status === "DONE" ? t("statusDone") : task.status}
+                                </span>
+                                <button
+                                  className="recent-task-edit"
+                                  onClick={(e) => { e.stopPropagation(); openEditTaskModal(task); }}
+                                  title={language === "TH" ? "แก้ไขงาน" : "Edit task"}
+                                >
+                                  <Pencil className="w-4 h-4" />
+                                </button>
+                                <button
+                                  className="recent-task-delete"
+                                  onClick={(e) => { e.stopPropagation(); handleDeleteTask(task.id); }}
+                                  title={language === "TH" ? "ลบงาน" : "Delete task"}
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        ))
+                          );
+                        })
                       )}
                     </div>
                   </div>
@@ -1957,8 +2213,8 @@ export default function Dashboard() {
                           </defs>
                           <XAxis dataKey="name" stroke="var(--text-muted)" style={{ fontSize: "0.75rem" }} />
                           <YAxis stroke="var(--text-muted)" style={{ fontSize: "0.75rem" }} allowDecimals={false} />
-                          <Tooltip />
-                          <Area type="monotone" dataKey="count" stroke="var(--primary)" fillOpacity={1} fill="url(#colorCount)" />
+                          <Tooltip content={<CustomTooltip />} cursor={{ stroke: "var(--border-color)", strokeWidth: 1, strokeDasharray: "4 4" }} />
+                          <Area type="monotone" dataKey="count" stroke="var(--primary)" strokeWidth={3} activeDot={{ r: 6, strokeWidth: 0, fill: "var(--primary)" }} fillOpacity={1} fill="url(#colorCount)" />
                         </AreaChart>
                       </ResponsiveContainer>
                     )}
@@ -1968,8 +2224,13 @@ export default function Dashboard() {
             )}
 
             {/* B. KANBAN BOARD VIEW */}
-            {activeView === "projects" && (
-              isDataLoading ? <KanbanSkeleton /> : (
+            {activeView === "projects" && (() => {
+              const filteredTasks = getFilteredTasks();
+              const todoCount = filteredTasks.filter((t) => t.status === "TODO").length;
+              const inProgressCount = filteredTasks.filter((t) => t.status === "IN_PROGRESS").length;
+              const doneCount = filteredTasks.filter((t) => t.status === "DONE").length;
+
+              return isDataLoading ? <KanbanSkeleton /> : (
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px", height: "100%", width: "100%" }}>
                   {activeWorkspace !== "personal" && (
                     <div className="kanban-filter-bar" style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "12px", padding: "24px 32px 0 32px" }}>
@@ -1984,131 +2245,158 @@ export default function Dashboard() {
                       />
                     </div>
                   )}
+                  
+                  {/* Mobile Segmented Tab Bar */}
+                  <div className="kanban-mobile-tabs">
+                    <button
+                      className={activeKanbanTab === "TODO" ? "active" : ""}
+                      onClick={() => { setActiveKanbanTab("TODO"); playSFX("click"); }}
+                    >
+                      {language === "TH" ? `ต้องทำ (${todoCount})` : `To Do (${todoCount})`}
+                    </button>
+                    <button
+                      className={activeKanbanTab === "IN_PROGRESS" ? "active" : ""}
+                      onClick={() => { setActiveKanbanTab("IN_PROGRESS"); playSFX("click"); }}
+                    >
+                      {language === "TH" ? `กำลังทำ (${inProgressCount})` : `In Progress (${inProgressCount})`}
+                    </button>
+                    <button
+                      className={activeKanbanTab === "DONE" ? "active" : ""}
+                      onClick={() => { setActiveKanbanTab("DONE"); playSFX("click"); }}
+                    >
+                      {language === "TH" ? `เสร็จสิ้น (${doneCount})` : `Done (${doneCount})`}
+                    </button>
+                  </div>
+
                   <DragDropContext onDragEnd={handleOnDragEnd}>
                     <div className="kanban-board" style={{ flexGrow: 1 }}>
                       {/* Column 1: TODO */}
-                      <Droppable droppableId="TODO">
-                        {(provided) => {
-                          const tasks = getFilteredTasks().filter((t) => t.status === "TODO");
-                          return (
-                            <div className="kanban-column kanban-column-TODO">
-                              <div className="column-header">
-                                <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                  <span style={{ display: "flex", alignItems: "center", color: "var(--text-muted)" }}><Circle className="w-4 h-4" /></span> {t("colTodo")}
-                                </span>
-                                <span className="task-count">{tasks.length}</span>
+                      <div className={`kanban-column-wrapper ${activeKanbanTab === "TODO" ? "show-mobile" : "hide-mobile"}`}>
+                        <Droppable droppableId="TODO">
+                          {(provided) => {
+                            const tasks = filteredTasks.filter((t) => t.status === "TODO");
+                            return (
+                              <div className="kanban-column kanban-column-TODO">
+                                <div className="column-header">
+                                  <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                    <span style={{ display: "flex", alignItems: "center", color: "var(--text-muted)" }}><Circle className="w-4 h-4" /></span> {t("colTodo")}
+                                  </span>
+                                  <span className="task-count">{tasks.length}</span>
+                                </div>
+                                <div className="task-list" ref={provided.innerRef} {...provided.droppableProps}>
+                                  {tasks.map((task, idx) => (
+                                    <DraggableDraggableTask key={task.id} task={task} index={idx} onDelete={handleDeleteTask} onToggleSubtask={handleToggleSubtask} onAddSubtask={handleAddSubtask} onStatusChange={handleUpdateTaskStatus} onEdit={openEditTaskModal} />
+                                  ))}
+                                  {provided.placeholder}
+                                  {tasks.length === 0 && (
+                                    <div className="empty-state-svg-container">
+                                      <svg className="empty-state-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <rect x="25" y="15" width="50" height="70" rx="8" className="svg-bg" strokeWidth="2" stroke="var(--border-color)" />
+                                        <rect x="35" y="10" width="30" height="10" rx="3" className="svg-primary" strokeWidth="2" />
+                                        <circle cx="50" cy="35" r="4" className="svg-accent" strokeWidth="2" />
+                                        <line x1="42" y1="50" x2="65" y2="50" className="svg-stroke" strokeWidth="2.5" strokeLinecap="round" />
+                                        <line x1="42" y1="62" x2="58" y2="62" className="svg-stroke" strokeWidth="2.5" strokeLinecap="round" />
+                                        <circle cx="32" cy="50" r="2" className="svg-primary" />
+                                        <circle cx="32" cy="62" r="2" className="svg-primary" />
+                                      </svg>
+                                      <h4 className="empty-state-svg-title">
+                                        {language === "TH" ? "ไม่มีงานที่ต้องทำ" : "No tasks to do"}
+                                      </h4>
+                                      <p className="empty-state-svg-desc">
+                                        {language === "TH" ? "สร้างงานใหม่เพื่อเริ่มต้นการทำงาน" : "Create a new task to get started"}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                              <div className="task-list" ref={provided.innerRef} {...provided.droppableProps}>
-                                {tasks.map((task, idx) => (
-                                  <DraggableDraggableTask key={task.id} task={task} index={idx} onDelete={handleDeleteTask} onToggleSubtask={handleToggleSubtask} onAddSubtask={handleAddSubtask} onStatusChange={handleUpdateTaskStatus} />
-                                ))}
-                                {provided.placeholder}
-                                {tasks.length === 0 && (
-                                  <div className="empty-state-svg-container">
-                                    <svg className="empty-state-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                      <rect x="25" y="15" width="50" height="70" rx="8" className="svg-bg" strokeWidth="2" stroke="var(--border-color)" />
-                                      <rect x="35" y="10" width="30" height="10" rx="3" className="svg-primary" strokeWidth="2" />
-                                      <circle cx="50" cy="35" r="4" className="svg-accent" strokeWidth="2" />
-                                      <line x1="42" y1="50" x2="65" y2="50" className="svg-stroke" strokeWidth="2.5" strokeLinecap="round" />
-                                      <line x1="42" y1="62" x2="58" y2="62" className="svg-stroke" strokeWidth="2.5" strokeLinecap="round" />
-                                      <circle cx="32" cy="50" r="2" className="svg-primary" />
-                                      <circle cx="32" cy="62" r="2" className="svg-primary" />
-                                    </svg>
-                                    <h4 className="empty-state-svg-title">
-                                      {language === "TH" ? "ยังไม่มีงานที่ต้องทำ" : "No tasks to do"}
-                                    </h4>
-                                    <p className="empty-state-svg-desc">
-                                      {language === "TH" ? "สร้างงานใหม่เพื่อเริ่มดำเนินการ" : "Create a new task to get started"}
-                                    </p>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        }}
-                      </Droppable>
+                            );
+                          }}
+                        </Droppable>
+                      </div>
 
                       {/* Column 2: IN_PROGRESS */}
-                      <Droppable droppableId="IN_PROGRESS">
-                        {(provided) => {
-                          const tasks = getFilteredTasks().filter((t) => t.status === "IN_PROGRESS");
-                          return (
-                            <div className="kanban-column kanban-column-IN_PROGRESS">
-                              <div className="column-header">
-                                <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                  <span style={{ display: "flex", alignItems: "center", color: "#3b82f6" }}><CircleDashed className="w-4 h-4" /></span> {t("colInProgress")}
-                                </span>
-                                <span className="task-count">{tasks.length}</span>
+                      <div className={`kanban-column-wrapper ${activeKanbanTab === "IN_PROGRESS" ? "show-mobile" : "hide-mobile"}`}>
+                        <Droppable droppableId="IN_PROGRESS">
+                          {(provided) => {
+                            const tasks = filteredTasks.filter((t) => t.status === "IN_PROGRESS");
+                            return (
+                              <div className="kanban-column kanban-column-IN_PROGRESS">
+                                <div className="column-header">
+                                  <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                    <span style={{ display: "flex", alignItems: "center", color: "#3b82f6" }}><CircleDashed className="w-4 h-4" /></span> {t("colInProgress")}
+                                  </span>
+                                  <span className="task-count">{tasks.length}</span>
+                                </div>
+                                <div className="task-list" ref={provided.innerRef} {...provided.droppableProps}>
+                                  {tasks.map((task, idx) => (
+                                    <DraggableDraggableTask key={task.id} task={task} index={idx} onDelete={handleDeleteTask} onToggleSubtask={handleToggleSubtask} onAddSubtask={handleAddSubtask} onStatusChange={handleUpdateTaskStatus} onEdit={openEditTaskModal} />
+                                  ))}
+                                  {provided.placeholder}
+                                  {tasks.length === 0 && (
+                                    <div className="empty-state-svg-container">
+                                      <svg className="empty-state-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <circle cx="50" cy="50" r="24" className="svg-bg" stroke="var(--border-color)" strokeWidth="2" />
+                                        <circle cx="50" cy="50" r="12" className="svg-primary" strokeWidth="2" />
+                                        <path d="M50 18v8M50 74v8M18 50h8M74 50h8M27.4 27.4l5.6 5.6M67 67l5.6 5.6M27.4 72.6l5.6-5.6M67 33l5.6-5.6" className="svg-primary" strokeWidth="2.5" strokeLinecap="round" />
+                                      </svg>
+                                      <h4 className="empty-state-svg-title">
+                                        {language === "TH" ? "ไม่มีงานที่กำลังทำ" : "No tasks in progress"}
+                                      </h4>
+                                      <p className="empty-state-svg-desc">
+                                        {language === "TH" ? "เริ่มทำงานหรือย้ายงานมาที่นี่เพื่อเริ่มต้นทำงาน" : "Drag a task here to begin working"}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                              <div className="task-list" ref={provided.innerRef} {...provided.droppableProps}>
-                                {tasks.map((task, idx) => (
-                                  <DraggableDraggableTask key={task.id} task={task} index={idx} onDelete={handleDeleteTask} onToggleSubtask={handleToggleSubtask} onAddSubtask={handleAddSubtask} onStatusChange={handleUpdateTaskStatus} />
-                                ))}
-                                {provided.placeholder}
-                                {tasks.length === 0 && (
-                                  <div className="empty-state-svg-container">
-                                    <svg className="empty-state-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                      <circle cx="50" cy="50" r="24" className="svg-bg" stroke="var(--border-color)" strokeWidth="2" />
-                                      <circle cx="50" cy="50" r="12" className="svg-primary" strokeWidth="2" />
-                                      <path d="M50 18v8M50 74v8M18 50h8M74 50h8M27.4 27.4l5.6 5.6M67 67l5.6 5.6M27.4 72.6l5.6-5.6M67 33l5.6-5.6" className="svg-primary" strokeWidth="2.5" strokeLinecap="round" />
-                                    </svg>
-                                    <h4 className="empty-state-svg-title">
-                                      {language === "TH" ? "ยังไม่มีงานที่กำลังทำ" : "No tasks in progress"}
-                                    </h4>
-                                    <p className="empty-state-svg-desc">
-                                      {language === "TH" ? "ลากการ์ดงานมาที่นี่เพื่อเริ่มทำ" : "Drag a task here to begin working"}
-                                    </p>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        }}
-                      </Droppable>
+                            );
+                          }}
+                        </Droppable>
+                      </div>
 
                       {/* Column 3: DONE */}
-                      <Droppable droppableId="DONE">
-                        {(provided) => {
-                          const tasks = getFilteredTasks().filter((t) => t.status === "DONE");
-                          return (
-                            <div className="kanban-column kanban-column-DONE">
-                              <div className="column-header">
-                                <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                  <span style={{ display: "flex", alignItems: "center", color: "#22c55e" }}><CheckCircle className="w-4 h-4" /></span> {t("colCompleted")}
-                                </span>
-                                <span className="task-count">{tasks.length}</span>
+                      <div className={`kanban-column-wrapper ${activeKanbanTab === "DONE" ? "show-mobile" : "hide-mobile"}`}>
+                        <Droppable droppableId="DONE">
+                          {(provided) => {
+                            const tasks = filteredTasks.filter((t) => t.status === "DONE");
+                            return (
+                              <div className="kanban-column kanban-column-DONE">
+                                <div className="column-header">
+                                  <span style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                    <span style={{ display: "flex", alignItems: "center", color: "var(--success)" }}><CheckCircle className="w-4 h-4" /></span> {t("colCompleted")}
+                                  </span>
+                                  <span className="task-count">{tasks.length}</span>
+                                </div>
+                                <div className="task-list" ref={provided.innerRef} {...provided.droppableProps}>
+                                  {tasks.map((task, idx) => (
+                                    <DraggableDraggableTask key={task.id} task={task} index={idx} onDelete={handleDeleteTask} onToggleSubtask={handleToggleSubtask} onAddSubtask={handleAddSubtask} onStatusChange={handleUpdateTaskStatus} onEdit={openEditTaskModal} />
+                                  ))}
+                                  {provided.placeholder}
+                                  {tasks.length === 0 && (
+                                    <div className="empty-state-svg-container">
+                                      <svg className="empty-state-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                        <circle cx="50" cy="50" r="24" className="svg-bg" stroke="var(--border-color)" strokeWidth="2" />
+                                        <path d="M38 50l8 8 16-16" className="svg-success" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+                                      </svg>
+                                      <h4 className="empty-state-svg-title">
+                                        {language === "TH" ? "ไม่มีงานที่เสร็จสิ้น" : "No completed tasks"}
+                                      </h4>
+                                      <p className="empty-state-svg-desc">
+                                        {language === "TH" ? "ทำภารกิจให้เสร็จเพื่อรับรางวัล!" : "Complete tasks to unlock achievements!"}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                              <div className="task-list" ref={provided.innerRef} {...provided.droppableProps}>
-                                {tasks.map((task, idx) => (
-                                  <DraggableDraggableTask key={task.id} task={task} index={idx} onDelete={handleDeleteTask} onToggleSubtask={handleToggleSubtask} onAddSubtask={handleAddSubtask} onStatusChange={handleUpdateTaskStatus} />
-                                ))}
-                                {provided.placeholder}
-                                {tasks.length === 0 && (
-                                  <div className="empty-state-svg-container">
-                                    <svg className="empty-state-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                      <path d="M35 15h30c0 0 0 30-15 30S35 15 35 15z" className="svg-bg" stroke="var(--border-color)" strokeWidth="2" />
-                                      <path d="M50 45v20M40 65h20" className="svg-stroke" strokeWidth="2.5" strokeLinecap="round" />
-                                      <circle cx="50" cy="28" r="8" className="svg-accent" strokeWidth="2" />
-                                      <path d="M30 20c-5 0-8 3-8 8s5 8 8 8M70 20c5 0 8 3 8 8s-5 8-8 8" className="svg-primary" strokeWidth="2" strokeLinecap="round" />
-                                    </svg>
-                                    <h4 className="empty-state-svg-title">
-                                      {language === "TH" ? "ยังไม่มีงานที่เสร็จแล้ว" : "No completed tasks"}
-                                    </h4>
-                                    <p className="empty-state-svg-desc">
-                                      {language === "TH" ? "ทำภารกิจให้เสร็จเพื่อรับรางวัล!" : "Complete tasks to unlock achievements!"}
-                                    </p>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        }}
-                      </Droppable>
+                            );
+                          }}
+                        </Droppable>
+                      </div>
                     </div>
                   </DragDropContext>
                 </div>
-              )
-            )}
+              );
+            })()}
 
             {/* C. CALENDAR VIEW */}
             {activeView === "calendar" && (
@@ -2123,6 +2411,8 @@ export default function Dashboard() {
                   onDeleteTask={handleDeleteTask}
                   onToggleSubtask={handleToggleSubtask}
                   onAddSubtask={handleAddSubtask}
+                  onStatusChange={handleUpdateTaskStatus}
+                  onEditTask={openEditTaskModal}
                 />
               )
             )}
@@ -2220,7 +2510,7 @@ export default function Dashboard() {
                       >
                         <XAxis dataKey="name" stroke="var(--text-muted)" style={{ fontSize: "0.75rem" }} />
                         <YAxis stroke="var(--text-muted)" style={{ fontSize: "0.75rem" }} allowDecimals={false} />
-                        <Tooltip />
+                        <Tooltip content={<CustomTooltip />} cursor={{ fill: "var(--bg-input)", opacity: 0.3 }} />
                         <Bar dataKey="value" radius={[8, 8, 0, 0]}>
                           <Cell fill="#34d399" />
                           <Cell fill="#fbbf24" />
@@ -2241,11 +2531,107 @@ export default function Dashboard() {
                       >
                         <XAxis dataKey="name" stroke="var(--text-muted)" style={{ fontSize: "0.75rem" }} />
                         <YAxis stroke="var(--text-muted)" style={{ fontSize: "0.75rem" }} allowDecimals={false} />
-                        <Tooltip />
+                        <Tooltip content={<CustomTooltip />} cursor={{ fill: "var(--bg-input)", opacity: 0.3 }} />
                         <Bar dataKey="value" fill="var(--primary)" radius={[8, 8, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
+
+                  {/* Completed Tasks by Project Donut Chart */}
+                  {(() => {
+                    const completedTasksByProjectData = [
+                      ...(unassignedTasks.filter(t => t.status === "DONE").length > 0 ? [{
+                        name: language === "TH" ? "ไม่มีโปรเจกต์" : "No Project",
+                        value: unassignedTasks.filter(t => t.status === "DONE").length,
+                        color: "#6b7280"
+                      }] : []),
+                      ...projects.map(p => ({
+                        name: p.name,
+                        value: p.tasks.filter(t => t.status === "DONE").length,
+                        color: p.color
+                      })).filter(p => p.value > 0)
+                    ];
+
+                    const totalCompleted = completedTasksByProjectData.reduce((acc, curr) => acc + curr.value, 0);
+
+                    return (
+                      <div className="card" style={{ gridColumn: "span 4", minHeight: "380px" }}>
+                        <h3 style={{ marginBottom: "20px" }}>{t("completedTasksByProject")}</h3>
+                        {completedTasksByProjectData.length === 0 ? (
+                          <div className="empty-state-svg-container" style={{ padding: "32px", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexGrow: 1 }}>
+                            <svg className="empty-state-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: "80px", height: "80px", marginBottom: "12px" }}>
+                              <circle cx="50" cy="50" r="35" className="svg-stroke" stroke="var(--border-color)" strokeWidth="2.5" strokeDasharray="5 5" />
+                              <path d="M50 30v20l10 10" className="svg-primary" stroke="var(--primary)" strokeWidth="2.5" strokeLinecap="round" />
+                            </svg>
+                            <h4 className="empty-state-svg-title" style={{ fontSize: "0.9rem", color: "var(--text-muted)" }}>
+                              {t("noCompletedTasksProject")}
+                            </h4>
+                          </div>
+                        ) : (
+                          <div className="stats-donut-container" style={{ display: "flex", gap: "40px", alignItems: "center", height: "calc(100% - 40px)", flexWrap: "wrap" }}>
+                            <div style={{ flex: "1 1 250px", height: "250px", minWidth: "250px", position: "relative" }}>
+                              <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                  <Pie
+                                    data={completedTasksByProjectData}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={65}
+                                    outerRadius={90}
+                                    paddingAngle={3}
+                                    dataKey="value"
+                                  >
+                                    {completedTasksByProjectData.map((entry, index) => (
+                                      <Cell key={`cell-${index}`} fill={entry.color} style={{ outline: "none", cursor: "pointer" }} />
+                                    ))}
+                                  </Pie>
+                                  <Tooltip content={<CustomTooltip />} />
+                                </PieChart>
+                              </ResponsiveContainer>
+                              {/* Center Text inside Donut */}
+                              <div style={{
+                                position: "absolute",
+                                top: "50%",
+                                left: "50%",
+                                transform: "translate(-50%, -50%)",
+                                textAlign: "center",
+                                pointerEvents: "none"
+                              }}>
+                                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 600 }}>
+                                  {language === "TH" ? "เสร็จสิ้น" : "Completed"}
+                                </span>
+                                <h2 style={{ fontSize: "2.25rem", fontWeight: 800, margin: "2px 0 0 0", color: "var(--text-main)", fontFamily: "var(--font-outfit)", lineHeight: 1 }}>
+                                  {totalCompleted}
+                                </h2>
+                              </div>
+                            </div>
+                            {/* Detailed Project List with Progress Bar */}
+                            <div style={{ flex: "2 1 350px", display: "flex", flexDirection: "column", gap: "16px" }}>
+                              {completedTasksByProjectData.map((project, index) => {
+                                const percentage = totalCompleted > 0 ? Math.round((project.value / totalCompleted) * 100) : 0;
+                                return (
+                                  <div key={index} className="donut-legend-item" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                        <span style={{ width: "12px", height: "12px", borderRadius: "4px", backgroundColor: project.color, display: "inline-block" }}></span>
+                                        <span style={{ fontWeight: 600, fontSize: "0.9rem", color: "var(--text-main)" }}>{project.name}</span>
+                                      </div>
+                                      <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                                        <span style={{ fontWeight: 700, color: "var(--text-main)" }}>{project.value}</span> {language === "TH" ? "งาน" : "tasks"} ({percentage}%)
+                                      </div>
+                                    </div>
+                                    <div style={{ width: "100%", height: "6px", backgroundColor: "var(--bg-input)", borderRadius: "3px", overflow: "hidden" }}>
+                                      <div style={{ width: `${percentage}%`, height: "100%", backgroundColor: project.color, borderRadius: "3px", transition: "width 0.8s ease-in-out" }}></div>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               )
             )}
@@ -2257,10 +2643,10 @@ export default function Dashboard() {
         {/* A. Project Modal */}
         <Modal
           isOpen={isProjectModalOpen}
-          onClose={() => setIsProjectModalOpen(false)}
-          title={t("modalCreateProject")}
+          onClose={() => { clearProjectForm(); setIsProjectModalOpen(false); }}
+          title={editingProject ? t("modalEditProject") : t("modalCreateProject")}
         >
-          <form onSubmit={handleAddProject} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          <form onSubmit={handleSubmitProject} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             <div className="form-group">
               <label className="form-label">{t("lblProjectName")}</label>
               <input
@@ -2284,12 +2670,53 @@ export default function Dashboard() {
             </div>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "10px" }}>
-              <button type="button" className="btn btn-secondary" onClick={() => setIsProjectModalOpen(false)}>
+              <button type="button" className="btn btn-secondary" onClick={() => { clearProjectForm(); setIsProjectModalOpen(false); }}>
                 {t("btnCancel")}
               </button>
               <button type="submit" className="btn btn-primary">
-                {t("btnSave")}
+                {editingProject ? t("btnSave") : t("btnProject")}
               </button>
+            </div>
+
+            {/* Manage Projects List */}
+            <div style={{ marginTop: "20px", borderTop: "1px solid var(--border-color)", paddingTop: "16px" }}>
+              <h4 style={{ fontSize: "0.9rem", fontWeight: 700, marginBottom: "12px", color: "var(--text-main)" }}>
+                {t("manageProjects") || "Manage All Projects"}
+              </h4>
+              {projects.length === 0 ? (
+                <p style={{ fontSize: "0.8rem", color: "var(--text-muted)", textAlign: "center" }}>
+                  {language === "TH" ? "ยังไม่มีโครงการ" : "No projects created yet"}
+                </p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "180px", overflowY: "auto", paddingRight: "4px" }}>
+                  {projects.map((proj) => (
+                    <div key={proj.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", backgroundColor: "var(--bg-app)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-color)" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span style={{ width: "12px", height: "12px", borderRadius: "50%", backgroundColor: proj.color, display: "inline-block" }}></span>
+                        <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-main)" }}>{proj.name}</span>
+                      </div>
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        <button
+                          type="button"
+                          onClick={() => selectProjectForEdit(proj)}
+                          style={{ padding: "4px", color: "var(--primary)", background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center" }}
+                          title={language === "TH" ? "แก้ไขโครงการ" : "Edit project"}
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteProject(proj.id)}
+                          style={{ padding: "4px", color: "var(--danger)", background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center" }}
+                          title={language === "TH" ? "ลบโครงการ" : "Delete project"}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </form>
         </Modal>
@@ -2297,10 +2724,10 @@ export default function Dashboard() {
         {/* B. Task Modal */}
         <Modal
           isOpen={isTaskModalOpen}
-          onClose={() => setIsTaskModalOpen(false)}
-          title={t("modalCreateTask")}
+          onClose={() => { setEditingTask(null); setIsTaskModalOpen(false); }}
+          title={editingTask ? t("modalEditTask") : t("modalCreateTask")}
         >
-          <form onSubmit={handleAddTask} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+          <form onSubmit={handleSubmitTask} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             <div className="form-group">
               <label className="form-label">{t("lblTitle")}</label>
               <input
@@ -2382,15 +2809,130 @@ export default function Dashboard() {
               </div>
             )}
 
+            {/* Subtasks Manager (inside Modal, only in Edit Mode) */}
+            {editingTask && (
+              <div className="form-group" style={{ borderTop: "1px solid var(--border-color)", paddingTop: "14px", marginTop: "4px" }}>
+                <label className="form-label" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span>{t("subtaskTitle") || "Subtasks"}</span>
+                  <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", fontWeight: 500 }}>
+                    {(() => {
+                      const curr = getAllTasks().find(t => t.id === editingTask.id) || editingTask;
+                      const done = curr.subtasks?.filter(s => s.isCompleted).length || 0;
+                      const tot = curr.subtasks?.length || 0;
+                      return `${done}/${tot}`;
+                    })()}
+                  </span>
+                </label>
+                
+                {(() => {
+                  const curr = getAllTasks().find(t => t.id === editingTask.id) || editingTask;
+                  const subtasks = curr.subtasks || [];
+                  return (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "10px", maxHeight: "120px", overflowY: "auto", paddingRight: "4px" }}>
+                      {subtasks.map((sub) => (
+                        <div key={sub.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", backgroundColor: "var(--bg-app)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-color)" }}>
+                          <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.8rem", cursor: "pointer", textDecoration: sub.isCompleted ? "line-through" : "none", color: sub.isCompleted ? "var(--text-muted)" : "var(--text-main)", userSelect: "none" }}>
+                            <input
+                              type="checkbox"
+                              checked={sub.isCompleted}
+                              onChange={(e) => handleToggleSubtask(sub.id, e.target.checked)}
+                              style={{ accentColor: "var(--primary)" }}
+                            />
+                            <span>{sub.title}</span>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSubtask(sub.id)}
+                            style={{ background: "none", border: "none", color: "var(--danger)", cursor: "pointer", padding: "2px", display: "flex", alignItems: "center" }}
+                            title={language === "TH" ? "ลบงานย่อย" : "Delete subtask"}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <input
+                    type="text"
+                    id="new-modal-subtask-title"
+                    placeholder={t("phAddSubtask") || "Add subtask..."}
+                    className="form-input"
+                    style={{ fontSize: "0.8rem", padding: "6px 12px", height: "32px", flexGrow: 1 }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        const input = e.currentTarget;
+                        if (input.value.trim()) {
+                          handleAddSubtask(editingTask.id, input.value.trim());
+                          input.value = "";
+                        }
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const input = document.getElementById("new-modal-subtask-title") as HTMLInputElement;
+                      if (input && input.value.trim()) {
+                        handleAddSubtask(editingTask.id, input.value.trim());
+                        input.value = "";
+                      }
+                    }}
+                    className="btn btn-secondary"
+                    style={{ padding: "0 12px", height: "32px", fontSize: "0.8rem" }}
+                  >
+                    {language === "TH" ? "เพิ่ม" : "Add"}
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "10px" }}>
-              <button type="button" className="btn btn-secondary" onClick={() => setIsTaskModalOpen(false)}>
+              <button type="button" className="btn btn-secondary" onClick={() => { setEditingTask(null); setIsTaskModalOpen(false); }}>
                 {t("btnCancel")}
               </button>
               <button type="submit" className="btn btn-primary">
-                {t("btnTask")}
+                {editingTask ? t("btnSave") : t("btnTask")}
               </button>
             </div>
           </form>
+        </Modal>
+
+        {/* Logout Confirmation Modal */}
+        <Modal
+          isOpen={isLogoutConfirmOpen}
+          onClose={() => setIsLogoutConfirmOpen(false)}
+          title={t("confirmLogoutTitle") || "Confirm Logout"}
+        >
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px", padding: "8px 0" }}>
+            <p style={{ fontSize: "0.95rem", color: "var(--text-main)", lineHeight: "1.5" }}>
+              {t("confirmLogoutDesc") || "Are you sure you want to log out of your account?"}
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "8px" }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => { setIsLogoutConfirmOpen(false); playSFX("click"); }}
+              >
+                {t("btnCancel")}
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={() => {
+                  playSFX("delete");
+                  signOut({ callbackUrl: "/login" });
+                }}
+                style={{ backgroundColor: "var(--danger)", color: "white" }}
+              >
+                <LogOut className="w-4 h-4" style={{ marginRight: "6px" }} />
+                {t("logout") || "Logout"}
+              </button>
+            </div>
+          </div>
         </Modal>
 
         {/* C. Settings Modal */}
@@ -3298,7 +3840,9 @@ export default function Dashboard() {
 
           <div
             className={`bottom-nav-item ${activeView === "projects" ? "active" : ""}`}
-            onClick={() => { setActiveView("projects"); playSFX("click"); }}
+            onClick={() => { 
+              setActiveView("projects"); playSFX("click"); 
+            }}
           >
             <FolderKanban />
             <span>{t("menuKanban")}</span>
@@ -3306,7 +3850,9 @@ export default function Dashboard() {
 
           <div
             className={`bottom-nav-item ${activeView === "calendar" ? "active" : ""}`}
-            onClick={() => { setActiveView("calendar"); playSFX("click"); }}
+            onClick={() => { 
+              setActiveView("calendar"); playSFX("click"); 
+            }}
           >
             <CalendarIcon />
             <span>{t("menuCalendar")}</span>
@@ -3389,45 +3935,52 @@ export default function Dashboard() {
         </div>
 
         {/* MOBILE WORKSPACE SWITCHER BOTTOM SHEET DRAWER */}
-        {isMobileMenuOpen && (
-          <div className="modal-overlay" onClick={() => setIsMobileMenuOpen(false)} style={{ zIndex: 100000 }}>
-            <div className="modal-container" onClick={(e) => e.stopPropagation()}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-                <h3 style={{ fontSize: "1.1rem", fontWeight: 700 }}>{language === "TH" ? "บัญชีและพื้นที่ทำงาน" : "Account & Workspace"}</h3>
-                <button
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.25rem", color: "var(--text-muted)" }}
-                >
-                  &times;
-                </button>
+        <Modal
+          isOpen={isMobileMenuOpen}
+          onClose={() => setIsMobileMenuOpen(false)}
+          title={language === "TH" ? "บัญชีและพื้นที่ทำงาน" : "Account & Workspace"}
+        >
+          {/* Profile details */}
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", background: "var(--bg-app)", padding: "12px", borderRadius: "12px", marginBottom: "20px" }}>
+            {userProfile?.image && userProfile.image.startsWith("http") ? (
+              <img src={userProfile.image} alt={userProfile.name || "User"} style={{ width: "44px", height: "44px", borderRadius: "50%" }} />
+            ) : userProfile?.image ? (
+              <div style={{ width: "44px", height: "44px", borderRadius: "50%", background: "var(--bg-card)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "1.2rem", border: "1px solid var(--border-color)" }}>
+                {userProfile.image}
               </div>
-
-              {/* Profile details */}
-              <div style={{ display: "flex", alignItems: "center", gap: "12px", background: "var(--bg-app)", padding: "12px", borderRadius: "12px", marginBottom: "20px" }}>
-                {userProfile?.image && userProfile.image.startsWith("http") ? (
-                  <img src={userProfile.image} alt={userProfile.name || "User"} style={{ width: "44px", height: "44px", borderRadius: "50%" }} />
-                ) : userProfile?.image ? (
-                  <div style={{ width: "44px", height: "44px", borderRadius: "50%", background: "var(--bg-card)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "1.2rem", border: "1px solid var(--border-color)" }}>
-                    {userProfile.image}
-                  </div>
-                ) : (
-                  <div style={{ width: "44px", height: "44px", borderRadius: "50%", background: "var(--primary-light)", color: "var(--primary)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "1.2rem" }}>
-                    {userProfile?.name ? userProfile.name[0].toUpperCase() : (session?.user?.name ? session.user.name[0].toUpperCase() : "U")}
-                  </div>
-                )}
-                <div style={{ display: "flex", flexDirection: "column" }}>
-                  <span style={{ fontWeight: 700, fontSize: "0.95rem" }}>{userProfile?.name || session?.user?.name || "User"}</span>
-                  <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{userProfile?.email || session?.user?.email}</span>
-                </div>
+            ) : (
+              <div style={{ width: "44px", height: "44px", borderRadius: "50%", background: "var(--primary-light)", color: "var(--primary)", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: "1.2rem" }}>
+                {userProfile?.name ? userProfile.name[0].toUpperCase() : (session?.user?.name ? session.user.name[0].toUpperCase() : "U")}
               </div>
+            )}
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              <span style={{ fontWeight: 700, fontSize: "0.95rem" }}>{userProfile?.name || session?.user?.name || "User"}</span>
+              <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>{userProfile?.email || session?.user?.email}</span>
+            </div>
+          </div>
 
-              {/* Workspace Selector */}
-              <div style={{ marginBottom: "24px" }}>
-                <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "8px" }}>
-                  {language === "TH" ? "เลือกพื้นที่ทำงาน" : "Select Workspace"}
-                </label>
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                  {workspaceOptions.map((opt: any) => (
+          {/* Workspace Selector */}
+          <div style={{ marginBottom: "24px" }}>
+            <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: "8px" }}>
+              {language === "TH" ? "เลือกพื้นที่ทำงาน" : "Select Workspace"}
+            </label>
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              {(() => {
+                // Flatten the options to handle nested groups (like teams list)
+                const flatWorkspaceOptions: any[] = [];
+                workspaceOptions.forEach((opt: any) => {
+                  if (opt.options) {
+                    opt.options.forEach((subOpt: any) => {
+                      flatWorkspaceOptions.push(subOpt);
+                    });
+                  } else {
+                    flatWorkspaceOptions.push(opt);
+                  }
+                });
+
+                return flatWorkspaceOptions.map((opt: any) => {
+                  const isCreateBtn = opt.value === "create";
+                  return (
                     <button
                       key={opt.value}
                       onClick={() => {
@@ -3449,44 +4002,147 @@ export default function Dashboard() {
                         gap: "10px",
                         padding: "12px",
                         borderRadius: "12px",
-                        border: "1px solid var(--border-color)",
-                        background: (activeWorkspace === "personal" && opt.value === "personal") || (activeWorkspace !== "personal" && activeWorkspace.id === opt.value) ? "var(--primary-light)" : "var(--bg-card)",
-                        color: (activeWorkspace === "personal" && opt.value === "personal") || (activeWorkspace !== "personal" && activeWorkspace.id === opt.value) ? "var(--primary)" : "var(--text-main)",
-                        fontWeight: (activeWorkspace === "personal" && opt.value === "personal") || (activeWorkspace !== "personal" && activeWorkspace.id === opt.value) ? 700 : 500,
+                        border: isCreateBtn ? "1px dashed var(--primary)" : "1px solid var(--border-color)",
+                        background: isCreateBtn 
+                          ? "rgba(99, 102, 241, 0.05)"
+                          : (activeWorkspace === "personal" && opt.value === "personal") || (activeWorkspace !== "personal" && activeWorkspace.id === opt.value) ? "var(--primary-light)" : "var(--bg-card)",
+                        color: isCreateBtn
+                          ? "var(--primary)"
+                          : (activeWorkspace === "personal" && opt.value === "personal") || (activeWorkspace !== "personal" && activeWorkspace.id === opt.value) ? "var(--primary)" : "var(--text-main)",
+                        fontWeight: isCreateBtn || (activeWorkspace === "personal" && opt.value === "personal") || (activeWorkspace !== "personal" && activeWorkspace.id === opt.value) ? 700 : 500,
                         cursor: "pointer",
                         width: "100%",
                         textAlign: "left"
                       }}
                     >
-                      <LayoutDashboard className="w-4 h-4" />
+                      {opt.icon || <LayoutDashboard className="w-4 h-4" />}
                       <span>{opt.label}</span>
                     </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                <button
-                  onClick={() => { setIsSettingsModalOpen(true); setIsMobileMenuOpen(false); playSFX("click"); }}
-                  className="btn btn-secondary"
-                  style={{ width: "100%", padding: "12px", borderRadius: "12px", justifyContent: "center" }}
-                >
-                  <SettingsIcon className="w-4 h-4" style={{ marginRight: '6px' }} />
-                  <span>{t("menuSettings") || "Settings"}</span>
-                </button>
-                
-                <button
-                  onClick={() => signOut({ callbackUrl: "/login" })}
-                  className="btn btn-danger"
-                  style={{ width: "100%", padding: "12px", borderRadius: "12px", justifyContent: "center", backgroundColor: "var(--danger)", color: "white" }}
-                >
-                  <LogOut className="w-4 h-4" style={{ marginRight: "6px" }} />
-                  <span>{t("logout") || "Logout"}</span>
-                </button>
-              </div>
+                  );
+                });
+              })()}
             </div>
           </div>
+
+          {/* Actions */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            <button
+              onClick={() => { setLanguage(language === "TH" ? "EN" : "TH"); setIsMobileMenuOpen(false); playSFX("toggle"); }}
+              className="btn btn-secondary"
+              style={{ width: "100%", padding: "12px", borderRadius: "12px", justifyContent: "center" }}
+            >
+              <Globe className="w-4 h-4" style={{ marginRight: '6px' }} />
+              <span>{language === "TH" ? "English" : "ภาษาไทย"}</span>
+            </button>
+            
+            <button
+              onClick={() => { setIsSettingsModalOpen(true); setIsMobileMenuOpen(false); playSFX("click"); }}
+              className="btn btn-secondary"
+              style={{ width: "100%", padding: "12px", borderRadius: "12px", justifyContent: "center" }}
+            >
+              <SettingsIcon className="w-4 h-4" style={{ marginRight: '6px' }} />
+              <span>{t("menuSettings") || "Settings"}</span>
+            </button>
+            
+            <button
+              onClick={() => { setIsLogoutConfirmOpen(true); setIsMobileMenuOpen(false); playSFX("click"); }}
+              className="btn btn-danger"
+              style={{ width: "100%", padding: "12px", borderRadius: "12px", justifyContent: "center", backgroundColor: "var(--danger)", color: "white" }}
+            >
+              <LogOut className="w-4 h-4" style={{ marginRight: "6px" }} />
+              <span>{t("logout") || "Logout"}</span>
+            </button>
+          </div>
+        </Modal>
+
+        {/* FAB for Mobile */}
+        <div className="mobile-fab-container">
+          <button 
+            className="mobile-fab" 
+            onClick={() => { setIsMobileFabOpen(!isMobileFabOpen); playSFX("click"); }}
+            style={{
+              position: "fixed",
+              bottom: "80px",
+              right: "16px",
+              width: "56px",
+              height: "56px",
+              borderRadius: "50%",
+              backgroundColor: "var(--primary)",
+              color: "white",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+              zIndex: 100001,
+              transition: "transform 0.2s ease",
+              transform: isMobileFabOpen ? "rotate(45deg)" : "rotate(0deg)",
+              border: "none",
+              cursor: "pointer"
+            }}
+          >
+            <Plus className="w-6 h-6" />
+          </button>
+        </div>
+
+        {/* FAB Bottom Sheet */}
+        <div className={`fab-bottom-sheet ${isMobileFabOpen ? "open" : ""}`} style={{
+          position: "fixed",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          backgroundColor: "var(--bg-card)",
+          borderTopLeftRadius: "24px",
+          borderTopRightRadius: "24px",
+          padding: "24px",
+          zIndex: 100000,
+          boxShadow: "0 -4px 20px rgba(0,0,0,0.1)",
+          transform: isMobileFabOpen ? "translateY(0)" : "translateY(100%)",
+          transition: "transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)",
+          visibility: isMobileFabOpen ? "visible" : "hidden"
+        }}>
+          <h3 style={{ marginTop: 0, marginBottom: "16px", fontSize: "1.1rem", textAlign: "center" }}>
+            {language === "TH" ? "สร้างใหม่" : "Create New"}
+          </h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            <button
+              onClick={() => { setIsTaskModalOpen(true); setIsMobileFabOpen(false); playSFX("click"); }}
+              className="btn btn-primary"
+              style={{ width: "100%", padding: "14px", borderRadius: "12px", justifyContent: "center" }}
+            >
+              <CheckSquare className="w-5 h-5" style={{ marginRight: '8px' }} />
+              {t("btnTask")}
+            </button>
+            <button
+              onClick={() => { setIsProjectModalOpen(true); setIsMobileFabOpen(false); playSFX("click"); }}
+              className="btn btn-secondary"
+              style={{ width: "100%", padding: "14px", borderRadius: "12px", justifyContent: "center" }}
+            >
+              <FolderKanban className="w-5 h-5" style={{ marginRight: '8px' }} />
+              {t("btnProject")}
+            </button>
+            <button
+              onClick={() => { setIsReportModalOpen(true); setIsMobileFabOpen(false); playSFX("click"); }}
+              className="btn btn-secondary"
+              style={{ width: "100%", padding: "14px", borderRadius: "12px", justifyContent: "center" }}
+            >
+              <FileText className="w-5 h-5" style={{ marginRight: '8px' }} />
+              {language === "TH" ? "รายงานสถานะ" : "Status Report"}
+            </button>
+          </div>
+        </div>
+
+        {/* FAB Overlay */}
+        {isMobileFabOpen && (
+          <div 
+            onClick={() => setIsMobileFabOpen(false)}
+            style={{
+              position: "fixed",
+              top: 0, left: 0, right: 0, bottom: 0,
+              backgroundColor: "rgba(0,0,0,0.5)",
+              zIndex: 99999,
+              animation: "fadeIn 0.2s ease"
+            }}
+          />
         )}
       </>
     );
@@ -3500,6 +4156,7 @@ const DraggableDraggableTask = ({
   onToggleSubtask,
   onAddSubtask,
   onStatusChange,
+  onEdit,
 }: {
   task: Task;
   index: number;
@@ -3507,9 +4164,20 @@ const DraggableDraggableTask = ({
   onToggleSubtask: (id: string, isCompleted: boolean) => void;
   onAddSubtask: (taskId: string, title: string) => void;
   onStatusChange: (taskId: string, newStatus: string) => void;
+  onEdit: (task: Task) => void;
 }) => {
   const { t, language } = useLanguage();
   const [subtaskTitle, setSubtaskTitle] = useState("");
+  const [isDragDisabled, setIsDragDisabled] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsDragDisabled(window.innerWidth <= 768);
+    };
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
 
   // Touch Swipe States
   const [touchStart, setTouchStart] = useState({ x: 0, y: 0 });
@@ -3588,8 +4256,24 @@ const DraggableDraggableTask = ({
     setSubtaskTitle("");
   };
 
+  const handleCycleStatus = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    let nextStatus = "TODO";
+    if (task.status === "TODO") {
+      nextStatus = "IN_PROGRESS";
+      playSFX("click");
+    } else if (task.status === "IN_PROGRESS") {
+      nextStatus = "DONE";
+      playSFX("complete");
+    } else {
+      nextStatus = "TODO";
+      playSFX("click");
+    }
+    onStatusChange(task.id, nextStatus);
+  };
+
   return (
-    <Draggable draggableId={task.id} index={index}>
+    <Draggable draggableId={task.id} index={index} isDragDisabled={isDragDisabled}>
       {(provided, snapshot) => {
         const isSwipedClass = isSwiping ? "swiping-card" : "swipe-reset-card";
         const transformStyle = swipeTranslation !== 0 
@@ -3622,34 +4306,56 @@ const DraggableDraggableTask = ({
               style={{
                 ...provided.draggableProps.style,
                 ...transformStyle,
-              }}
+                "--card-accent": task.priority === "HIGH" ? "var(--danger)" : task.priority === "MEDIUM" ? "var(--warning)" : "var(--success)",
+              } as any}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <span className="task-title">{task.title}</span>
-                <button
-                  onClick={() => onDelete(task.id)}
-                  className="task-delete-btn"
-                  style={{ color: "var(--danger)", border: "none", background: "none", cursor: "pointer" }}
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
+              {/* Header: Title + Delete */}
+              <div className="task-card-header">
+                <span className={`task-title ${task.status === "DONE" ? "task-title-completed" : ""}`}>
+                  {task.title}
+                </span>
+                <div className="task-card-header-actions" style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onEdit(task); }}
+                    className="task-edit-btn"
+                    style={{ color: "var(--text-muted)", border: "none", background: "none", cursor: "pointer", padding: "2px 0 0 0" }}
+                    title={language === "TH" ? "แก้ไขงาน" : "Edit task"}
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); onDelete(task.id); }}
+                    className="task-delete-btn"
+                    style={{ color: "var(--danger)", border: "none", background: "none", cursor: "pointer", padding: "2px 0 0 0" }}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
 
+              {/* Description (truncated) */}
               {task.description && <p className="task-description">{task.description}</p>}
 
+              {/* Subtask progress bar (always visible) */}
               {totalSubtasks > 0 && (
-                <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "4px" }}>
-                  <CheckSquare className="w-3.5 h-3.5" />
+                <div className="task-subtask-progress">
+                  <CheckSquare style={{ width: 13, height: 13, flexShrink: 0 }} />
                   <span>{completedSubtasks}/{totalSubtasks}</span>
-                  <div style={{ flexGrow: 1, height: "4px", backgroundColor: "var(--border-color)", borderRadius: "2px", overflow: "hidden" }}>
-                    <div style={{ width: `${(completedSubtasks / totalSubtasks) * 100}%`, height: "100%", backgroundColor: completedSubtasks === totalSubtasks ? "var(--success)" : "var(--primary)", transition: "width 0.3s ease, background-color 0.3s ease" }} />
+                  <div className="task-subtask-progress-bar-track">
+                    <div
+                      className="task-subtask-progress-bar-fill"
+                      style={{
+                        width: `${(completedSubtasks / totalSubtasks) * 100}%`,
+                        backgroundColor: completedSubtasks === totalSubtasks ? "var(--success)" : "var(--primary)",
+                      }}
+                    />
                   </div>
                 </div>
               )}
 
-              {/* Subtasks rendering */}
+              {/* Individual subtasks (hidden on mobile via CSS) */}
               {task.subtasks && task.subtasks.length > 0 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "4px" }}>
+                <div className="task-subtasks-list">
                   {task.subtasks.map((sub) => (
                     <label
                       key={sub.id}
@@ -3675,96 +4381,75 @@ const DraggableDraggableTask = ({
                 </div>
               )}
 
-              {/* Quick Subtask Addition form */}
-              <form onSubmit={handleSubmitSubtask} style={{ display: "flex", gap: "6px", marginTop: "4px" }}>
-                <input
-                  type="text"
-                  placeholder={t("phAddSubtask")}
-                  value={subtaskTitle}
-                  onChange={(e) => setSubtaskTitle(e.target.value)}
-                  className="form-input"
-                  style={{ fontSize: "0.7rem", padding: "4px 8px", flexGrow: 1 }}
-                />
-                <button
-                  type="submit"
-                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--primary)" }}
-                >
-                  <PlusCircle className="w-4 h-4" />
-                </button>
-              </form>
+              {/* Footer: Priority + Meta */}
+              <div className="task-footer-premium">
+                <div className="task-footer-row">
+                  <span
+                    className="priority-badge"
+                    style={{
+                      backgroundColor:
+                        task.priority === "HIGH" ? "var(--danger-light)"
+                        : task.priority === "MEDIUM" ? "var(--warning-light)"
+                        : "var(--success-light)",
+                      color:
+                        task.priority === "HIGH" ? "var(--danger)"
+                        : task.priority === "MEDIUM" ? "var(--warning)"
+                        : "var(--success)",
+                    }}
+                  >
+                    {task.priority === "HIGH" && <AlertCircle />}
+                    {task.priority === "MEDIUM" && <Minus />}
+                    {task.priority === "LOW" && <ArrowDown />}
+                    {task.priority === "HIGH" ? t("statHigh") : task.priority === "MEDIUM" ? t("statMedium") : task.priority === "LOW" ? t("statLow") : task.priority}
+                  </span>
 
-              <div className="task-footer">
-                <span
-                  className="tag-badge"
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "4px",
-                    backgroundColor:
-                      task.priority === "HIGH"
-                        ? "var(--danger-light)"
-                        : task.priority === "MEDIUM"
-                          ? "var(--warning-light)"
-                          : "var(--success-light)",
-                    color:
-                      task.priority === "HIGH"
-                        ? "var(--danger)"
-                        : task.priority === "MEDIUM"
-                          ? "var(--warning)"
-                          : "var(--success)",
-                  }}
-                >
-                  {task.priority === "HIGH" && <AlertCircle className="w-3 h-3" />}
-                  {task.priority === "MEDIUM" && <Minus className="w-3 h-3" />}
-                  {task.priority === "LOW" && <ArrowDown className="w-3 h-3" />}
-                  {task.priority === "HIGH" ? t("statHigh") : task.priority === "MEDIUM" ? t("statMedium") : task.priority === "LOW" ? t("statLow") : task.priority}
-                </span>
+                  {/* Meta: Due date + Assignee */}
+                  <div className="task-footer-meta">
+                    {task.dueDate && (
+                      <span className="task-footer-meta-item" style={{ color: dueDateColor }}>
+                        <CalendarIcon />
+                        {new Date(task.dueDate).toLocaleDateString()}
+                      </span>
+                    )}
 
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  {task.dueDate && (
-                    <span style={{ display: "flex", alignItems: "center", gap: "4px", fontSize: "0.7rem", fontWeight: 500, color: dueDateColor }}>
-                      <CalendarIcon className="w-3 h-3" />
-                      {new Date(task.dueDate).toLocaleDateString()}
-                    </span>
-                  )}
-
-                  {task.assignee && (
-                    <div
-                      className="task-assignee-avatar"
-                      title={task.assignee.name || task.assignee.email}
-                      style={{
-                        width: "24px",
-                        height: "24px",
-                        borderRadius: "50%",
-                        overflow: "hidden",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: "0.65rem",
-                        fontWeight: 700,
-                        background: "linear-gradient(135deg, var(--primary), var(--accent-purple))",
-                        color: "white",
-                        border: "1.5px solid var(--bg-card)",
-                        marginLeft: "4px"
-                      }}
-                    >
-                      {task.assignee.image && task.assignee.image.startsWith("http") ? (
-                        <img
-                          src={task.assignee.image}
-                          alt={task.assignee.name || "User"}
-                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                        />
-                      ) : task.assignee.image ? (
-                        <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.8rem", background: "var(--bg-card)" }}>
-                          {task.assignee.image}
-                        </div>
-                      ) : (
-                        (task.assignee.name || task.assignee.email)[0].toUpperCase()
-                      )}
-                    </div>
-                  )}
+                    {task.assignee && (
+                      <div
+                        className="task-assignee-avatar"
+                        title={task.assignee.name || task.assignee.email}
+                      >
+                        {task.assignee.image && task.assignee.image.startsWith("http") ? (
+                          <img
+                            src={task.assignee.image}
+                            alt={task.assignee.name || "User"}
+                          />
+                        ) : task.assignee.image ? (
+                          <span style={{ fontSize: "0.8rem" }}>{task.assignee.image}</span>
+                        ) : (
+                          (task.assignee.name || task.assignee.email)[0].toUpperCase()
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
+
+              {/* Full-width Status Move CTA Button */}
+              <button
+                onClick={(e) => { e.stopPropagation(); handleCycleStatus(e as unknown as React.MouseEvent); }}
+                className={`status-move-btn status-move-btn-${task.status}`}
+                title={language === "TH" ? "กดเพื่อเปลี่ยนสถานะ" : "Click to change status"}
+              >
+                <span className="status-move-btn-current">
+                  {task.status === "TODO" && <Circle className="status-move-icon" />}
+                  {task.status === "IN_PROGRESS" && <CircleDashed className="status-move-icon" />}
+                  {task.status === "DONE" && <CheckCircle className="status-move-icon" />}
+                  <span>{task.status === "TODO" ? "TODO" : task.status === "IN_PROGRESS" ? "IN PROGRESS" : "DONE"}</span>
+                </span>
+                <ArrowRight className="status-move-arrow" />
+                <span className="status-move-btn-next">
+                  {task.status === "TODO" ? "IN PROGRESS" : task.status === "IN_PROGRESS" ? "DONE" : "TODO"}
+                </span>
+              </button>
             </div>
           </div>
         );
@@ -3786,7 +4471,9 @@ const SidebarTaskCard = ({
   onDelete,
   onToggleSubtask,
   onAddSubtask,
-  t
+  onStatusChange,
+  t,
+  onEdit,
 }: {
   task: Task;
   projectColor: string;
@@ -3794,7 +4481,9 @@ const SidebarTaskCard = ({
   onDelete: (id: string) => void;
   onToggleSubtask: (id: string, completed: boolean) => void;
   onAddSubtask: (taskId: string, title: string) => void;
+  onStatusChange: (taskId: string, newStatus: string) => void;
   t: (key: any) => string;
+  onEdit: (task: Task) => void;
 }) => {
   const [subtaskTitle, setSubtaskTitle] = useState("");
 
@@ -3808,8 +4497,44 @@ const SidebarTaskCard = ({
   const totalSubtasks = task.subtasks?.length || 0;
   const completedSubtasks = task.subtasks?.filter((s) => s.isCompleted).length || 0;
 
+  const handleCycleStatus = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    let nextStatus = "TODO";
+    if (task.status === "TODO") {
+      nextStatus = "IN_PROGRESS";
+      playSFX("click");
+    } else if (task.status === "IN_PROGRESS") {
+      nextStatus = "DONE";
+      playSFX("complete");
+    } else {
+      nextStatus = "TODO";
+      playSFX("click");
+    }
+    onStatusChange(task.id, nextStatus);
+  };
+
+  let dueDateColor = "var(--text-muted)";
+  if (task.dueDate && task.status !== "DONE") {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const due = new Date(task.dueDate);
+    due.setHours(0, 0, 0, 0);
+    const diffTime = due.getTime() - today.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    if (diffDays < 0) dueDateColor = "var(--danger)";
+    else if (diffDays <= 1) dueDateColor = "var(--warning)";
+    else dueDateColor = "var(--success)";
+  }
+
   return (
-    <div className="sidebar-task-card">
+    <div
+      className="sidebar-task-card"
+      style={{
+        "--card-accent": task.priority === "HIGH" ? "var(--danger)" : task.priority === "MEDIUM" ? "var(--warning)" : "var(--success)",
+      } as any}
+    >
+      {/* Header: Project Badge + Title + Delete */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
           <span
@@ -3827,32 +4552,54 @@ const SidebarTaskCard = ({
           >
             {projectName}
           </span>
-          <span className="task-title" style={{ fontSize: "0.85rem", fontWeight: 600 }}>{task.title}</span>
+          <span className={`task-title ${task.status === "DONE" ? "task-title-completed" : ""}`}>
+            {task.title}
+          </span>
         </div>
-        <button
-          onClick={() => onDelete(task.id)}
-          style={{ color: "var(--danger)", border: "none", background: "none", cursor: "pointer", padding: "2px" }}
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
+        <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+          <button
+            onClick={() => onEdit(task)}
+            className="task-edit-btn"
+            style={{ color: "var(--text-muted)", border: "none", background: "none", cursor: "pointer", padding: "2px 0 0 0" }}
+            title={t("modalEditTask") || "Edit task"}
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => onDelete(task.id)}
+            className="task-delete-btn"
+            style={{ color: "var(--danger)", border: "none", background: "none", cursor: "pointer", padding: "2px 0 0 0" }}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
+      {/* Description Bubble */}
       {task.description && (
-        <p className="task-description" style={{ fontSize: "0.75rem", margin: "4px 0 0 0" }}>
+        <p className="task-description">
           {task.description}
         </p>
       )}
 
+      {/* Subtask Progress Bar */}
       {totalSubtasks > 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "0.7rem", color: "var(--text-muted)", marginTop: "6px" }}>
-          <CheckSquare className="w-3.5 h-3.5" />
+        <div className="task-subtask-progress">
+          <CheckSquare style={{ width: 13, height: 13, flexShrink: 0 }} />
           <span>{completedSubtasks}/{totalSubtasks}</span>
-          <div style={{ flexGrow: 1, height: "4px", backgroundColor: "var(--border-color)", borderRadius: "2px", overflow: "hidden" }}>
-            <div style={{ width: `${(completedSubtasks / totalSubtasks) * 100}%`, height: "100%", backgroundColor: completedSubtasks === totalSubtasks ? "var(--success)" : "var(--primary)" }} />
+          <div className="task-subtask-progress-bar-track">
+            <div
+              className="task-subtask-progress-bar-fill"
+              style={{
+                width: `${(completedSubtasks / totalSubtasks) * 100}%`,
+                backgroundColor: completedSubtasks === totalSubtasks ? "var(--success)" : "var(--primary)",
+              }}
+            />
           </div>
         </div>
       )}
 
+      {/* Subtasks List */}
       {task.subtasks && task.subtasks.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginTop: "6px", borderTop: "1px solid var(--border-color)", paddingTop: "6px" }}>
           {task.subtasks.map((sub) => (
@@ -3880,6 +4627,7 @@ const SidebarTaskCard = ({
         </div>
       )}
 
+      {/* Subtask Form */}
       <form onSubmit={handleSubmitSubtask} style={{ display: "flex", gap: "6px", marginTop: "8px" }}>
         <input
           type="text"
@@ -3896,6 +4644,75 @@ const SidebarTaskCard = ({
           <PlusCircle className="w-4 h-4" />
         </button>
       </form>
+
+      {/* Footer: Priority + Meta */}
+      <div className="task-footer-premium">
+        <div className="task-footer-row">
+          <span
+            className="priority-badge"
+            style={{
+              backgroundColor:
+                task.priority === "HIGH" ? "var(--danger-light)"
+                : task.priority === "MEDIUM" ? "var(--warning-light)"
+                : "var(--success-light)",
+              color:
+                task.priority === "HIGH" ? "var(--danger)"
+                : task.priority === "MEDIUM" ? "var(--warning)"
+                : "var(--success)",
+            }}
+          >
+            {task.priority === "HIGH" && <AlertCircle className="w-3 h-3" />}
+            {task.priority === "MEDIUM" && <Minus className="w-3 h-3" />}
+            {task.priority === "LOW" && <ArrowDown className="w-3 h-3" />}
+            {task.priority === "HIGH" ? t("statHigh") : task.priority === "MEDIUM" ? t("statMedium") : task.priority === "LOW" ? t("statLow") : task.priority}
+          </span>
+
+          <div className="task-footer-meta">
+            {task.dueDate && (
+              <span className="task-footer-meta-item" style={{ color: dueDateColor }}>
+                <CalendarIcon className="w-3.5 h-3.5" />
+                {new Date(task.dueDate).toLocaleDateString()}
+              </span>
+            )}
+
+            {task.assignee && (
+              <div
+                className="task-assignee-avatar"
+                title={task.assignee.name || task.assignee.email}
+              >
+                {task.assignee.image && task.assignee.image.startsWith("http") ? (
+                  <img
+                    src={task.assignee.image}
+                    alt={task.assignee.name || "User"}
+                  />
+                ) : task.assignee.image ? (
+                  <span style={{ fontSize: "0.8rem" }}>{task.assignee.image}</span>
+                ) : (
+                  (task.assignee.name || task.assignee.email)[0].toUpperCase()
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Status Move CTA Button */}
+      <button
+        onClick={handleCycleStatus}
+        className={`status-move-btn status-move-btn-${task.status}`}
+        style={{ marginTop: "10px" }}
+      >
+        <span className="status-move-btn-current">
+          {task.status === "TODO" && <Circle className="status-move-icon" />}
+          {task.status === "IN_PROGRESS" && <CircleDashed className="status-move-icon" />}
+          {task.status === "DONE" && <CheckCircle className="status-move-icon" />}
+          <span>{task.status === "TODO" ? "TODO" : task.status === "IN_PROGRESS" ? "IN PROGRESS" : "DONE"}</span>
+        </span>
+        <ArrowRight className="status-move-arrow" />
+        <span className="status-move-btn-next">
+          {task.status === "TODO" ? "IN PROGRESS" : task.status === "IN_PROGRESS" ? "DONE" : "TODO"}
+        </span>
+      </button>
     </div>
   );
 };
@@ -3907,7 +4724,9 @@ const CalendarPanel = ({
   onAddTask,
   onDeleteTask,
   onToggleSubtask,
-  onAddSubtask
+  onAddSubtask,
+  onStatusChange,
+  onEditTask,
 }: {
   tasks: Task[];
   projects: Project[];
@@ -3915,6 +4734,8 @@ const CalendarPanel = ({
   onDeleteTask: (id: string) => void;
   onToggleSubtask: (id: string, completed: boolean) => void;
   onAddSubtask: (taskId: string, title: string) => void;
+  onStatusChange: (taskId: string, newStatus: string) => void;
+  onEditTask: (task: Task) => void;
 }) => {
   const { t, language } = useLanguage();
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -4339,7 +5160,9 @@ const CalendarPanel = ({
                   onDelete={onDeleteTask}
                   onToggleSubtask={onToggleSubtask}
                   onAddSubtask={onAddSubtask}
+                  onStatusChange={onStatusChange}
                   t={t}
+                  onEdit={onEditTask}
                 />
               );
             })

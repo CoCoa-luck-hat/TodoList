@@ -40,13 +40,34 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth, clas
     <div 
       className={`modal-overlay ${isClosing ? 'fade-out' : 'fade-in'}`} 
       onClick={onClose}
+      style={{ zIndex: 100000 }}
     >
       <div 
         className={`modal-content ${isClosing ? 'scale-out' : 'scale-in'} ${className}`} 
         onClick={(e) => e.stopPropagation()}
-        style={maxWidth ? { maxWidth } : undefined}
+        style={{ ...(maxWidth ? { maxWidth } : {}), backgroundColor: "var(--bg-card)" }}
       >
-        {title && <h3 style={{ fontSize: "1.25rem", fontWeight: 800 }}>{title}</h3>}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+          {title ? <h3 style={{ fontSize: "1.25rem", fontWeight: 800, margin: 0 }}>{title}</h3> : <div />}
+          <button 
+            onClick={onClose} 
+            className="modal-close-btn" 
+            style={{ 
+              background: "none", 
+              border: "none", 
+              cursor: "pointer", 
+              fontSize: "1.5rem", 
+              color: "var(--text-muted)", 
+              padding: "4px",
+              lineHeight: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center"
+            }}
+          >
+            &times;
+          </button>
+        </div>
         {children}
       </div>
     </div>
