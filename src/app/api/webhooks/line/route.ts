@@ -36,6 +36,15 @@ export async function POST(req: Request) {
             const userId = text.replace("LINK_ACCOUNT_", "");
 
             try {
+              // Remove the lineUserId from any other user to prevent unique constraint violation
+              await prisma.user.updateMany({
+                where: {
+                  lineUserId: lineUserId,
+                  id: { not: userId }
+                },
+                data: { lineUserId: null }
+              });
+
               // Find the user and update their lineUserId
               const user = await prisma.user.update({
                 where: { id: userId },
