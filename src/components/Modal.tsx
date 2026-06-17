@@ -34,6 +34,16 @@ export default function Modal({ isOpen, onClose, title, children, maxWidth, clas
     };
   }, [isOpen, isMounted]);
 
+  useEffect(() => {
+    if (isOpen) {
+      const originalStyle = window.getComputedStyle(document.body).overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = originalStyle;
+      };
+    }
+  }, [isOpen]);
+
   if (!isMounted) return null;
 
   return (
