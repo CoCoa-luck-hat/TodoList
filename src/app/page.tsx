@@ -3360,6 +3360,35 @@ export default function Dashboard() {
                       </svg>
                       {language === "TH" ? "ผูกบัญชี LINE" : "Link LINE Account"}
                     </button>
+
+                    <div style={{ marginTop: "16px", padding: "12px", background: "var(--bg-app)", borderRadius: "8px", border: "1px solid var(--border-color)", textAlign: "left" }}>
+                      <p style={{ fontSize: "0.78rem", fontWeight: 700, margin: "0 0 6px 0", color: "var(--text-main)" }}>
+                        {language === "TH" ? "💡 วิธีสำรองสำหรับโทรศัพท์มือถือ:" : "💡 Alternative Mobile Method:"}
+                      </p>
+                      <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", margin: "0 0 8px 0", lineHeight: "1.4" }}>
+                        {language === "TH" 
+                          ? "หากกดปุ่มเพื่อผูกบัญชีด้านบนแล้วไม่ได้ผล (เนื่องจากปัญหาการสลับแอป/เบราว์เซอร์ของโทรศัพท์) ให้กดปุ่มคัดลอกข้อความด้านล่างนี้ แล้วส่งเป็นข้อความแชทไปที่ LINE Official Account ในข้อ 1 ได้เลยครับ:" 
+                          : "If the connection button above fails due to browser redirection, click copy below and paste it as a chat message to our LINE Official Account in step 1:"}
+                      </p>
+                      <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                        <code style={{ flexGrow: 1, padding: "6px 8px", background: "var(--bg-card)", border: "1px solid var(--border-color)", borderRadius: "4px", fontSize: "0.72rem", fontFamily: "monospace", overflowX: "auto", whiteSpace: "nowrap" }}>
+                          LINK_ACCOUNT_{session?.user?.id}
+                        </code>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          style={{ padding: "6px 12px", fontSize: "0.75rem", height: "auto", flexShrink: 0 }}
+                          onClick={() => {
+                            if (session?.user?.id) {
+                              navigator.clipboard.writeText(`LINK_ACCOUNT_${session.user.id}`);
+                              showToast(language === "TH" ? "คัดลอกข้อความแล้ว!" : "Message copied!", "success");
+                            }
+                          }}
+                        >
+                          {language === "TH" ? "คัดลอก" : "Copy"}
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 )}
 
