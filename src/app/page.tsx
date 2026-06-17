@@ -2231,7 +2231,7 @@ export default function Dashboard() {
               const doneCount = filteredTasks.filter((t) => t.status === "DONE").length;
 
               return isDataLoading ? <KanbanSkeleton /> : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px", flex: "1 1 0", minHeight: 0, overflow: "hidden", width: "100%" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", height: "100%", width: "100%" }}>
                   {activeWorkspace !== "personal" && (
                     <div className="kanban-filter-bar" style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "12px", padding: "24px 32px 0 32px" }}>
                       <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-muted)" }}>
@@ -2269,7 +2269,7 @@ export default function Dashboard() {
                   </div>
 
                   <DragDropContext onDragEnd={handleOnDragEnd}>
-                    <div className="kanban-board" style={{ flexGrow: 1, minHeight: 0 }}>
+                    <div className="kanban-board" style={{ flexGrow: 1 }}>
                       {/* Column 1: TODO */}
                       <div className={`kanban-column-wrapper ${activeKanbanTab === "TODO" ? "show-mobile" : "hide-mobile"}`}>
                         <Droppable droppableId="TODO">

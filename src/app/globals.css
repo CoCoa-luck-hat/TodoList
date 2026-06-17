@@ -147,10 +147,6 @@ h1, h2, h3, h4, h5, h6 {
   overflow: hidden;
 }
 
-.main-content.kanban-view .view-container-animate {
-  overflow: hidden;
-}
-
 /* Sidebar Branding & Navigation */
 .sidebar-logo {
   display: flex;
@@ -4339,8 +4335,6 @@ input:checked + .switch-slider:before {
   flex-direction: column;
   height: 100%;
   min-width: 0;
-  min-height: 0;
-  overflow: hidden;
   flex: 1;
 }
 
