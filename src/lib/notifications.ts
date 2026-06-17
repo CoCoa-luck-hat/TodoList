@@ -22,7 +22,7 @@ export async function sendNotifications(payload: NotificationPayload) {
     });
 
     const lineToken = settings?.lineToken || process.env.LINE_CHANNEL_ACCESS_TOKEN;
-    const emailRecipient = settings?.emailRecipient || "";
+    const emailRecipient = settings?.emailRecipient || process.env.ADMIN_EMAIL || "";
 
     // 2. Trigger LINE Message if token exists
     if (lineToken) {

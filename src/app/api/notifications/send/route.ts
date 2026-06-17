@@ -56,7 +56,11 @@ async function sendNotificationToUser(
 
     // 1. Send Email (if preferred and enabled for this event)
     const emailEnabled = prefs.notifyEmail && isEventEnabled(prefs.emailEvents, eventKey, prefs.events);
-    const recipientEmail = prefs.emailRecipient || targetUser.email;
+    let recipientEmail = prefs.emailRecipient || targetUser.email;
+    if (recipientEmail && process.env.ADMIN_EMAIL && !recipientEmail.toLowerCase().includes(process.env.ADMIN_EMAIL.toLowerCase())) {
+      console.log(`Routing email from ${recipientEmail} to verified admin ${process.env.ADMIN_EMAIL} due to Resend sandbox limits.`);
+      recipientEmail = process.env.ADMIN_EMAIL;
+    }
     if (emailEnabled && recipientEmail) {
       let emailComponent;
       let subject = "New Notification";
