@@ -166,7 +166,7 @@ export async function POST(request: Request) {
         type: "create",
         taskTitle: title,
         taskDueDate: dueDate || undefined,
-      }).catch(console.error);
+      }, userId).catch(console.error);
 
       return NextResponse.json(task);
     }
@@ -286,7 +286,7 @@ export async function PUT(request: Request) {
           body: `Good job! The task has been successfully marked as complete.`,
           type: "complete",
           taskTitle: task.title,
-        }).catch(console.error);
+        }, userId).catch(console.error);
       }
 
       // Send Task Assigned Notification

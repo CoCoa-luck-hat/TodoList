@@ -14,7 +14,7 @@ interface NotificationPayload {
   taskDueDate?: string;
 }
 
-export async function sendNotifications(payload: NotificationPayload) {
+export async function sendNotifications(payload: NotificationPayload, userId?: string) {
   try {
     // 1. Fetch active settings (with graceful fallback if not initialized in database)
     const settings = await prisma.setting.findUnique({
@@ -22,7 +22,29 @@ export async function sendNotifications(payload: NotificationPayload) {
     });
 
     const lineToken = settings?.lineToken || process.env.LINE_CHANNEL_ACCESS_TOKEN;
-    const emailRecipient = settings?.emailRecipient || process.env.ADMIN_EMAIL || "";
+    
+    // Resolve email recipient based on userId (if provided) or global settings
+    let emailRecipient = "";
+    let notifyEmailEnabled = true;
+
+    if (userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          email: true,
+          notificationPreferences: true
+        }
+      });
+      if (user) {
+        const prefs = (user.notificationPreferences as any) || {};
+        notifyEmailEnabled = prefs.notifyEmail !== undefined ? prefs.notifyEmail : true;
+        emailRecipient = prefs.emailRecipient || user.email || "";
+      }
+    }
+
+    if (!emailRecipient) {
+      emailRecipient = settings?.emailRecipient || process.env.ADMIN_EMAIL || "";
+    }
 
     // 2. Trigger LINE Message if token exists
     if (lineToken) {
@@ -31,11 +53,11 @@ export async function sendNotifications(payload: NotificationPayload) {
       console.log("LINE Messaging token not set. Skipping LINE notification.");
     }
 
-    // 3. Trigger Email if recipient exists
-    if (emailRecipient) {
+    // 3. Trigger Email if recipient exists and notifications are enabled
+    if (notifyEmailEnabled && emailRecipient) {
       await sendEmailMessage(emailRecipient, payload);
     } else {
-      console.log("Email recipient not set. Skipping email notification.");
+      console.log("Email recipient not set or email notifications disabled. Skipping email notification.");
     }
   } catch (error) {
     console.error("Error in notification service:", error);
