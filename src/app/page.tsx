@@ -2041,7 +2041,7 @@ export default function Dashboard() {
                       <Bell className="w-5 h-5 text-indigo-500" />
                       <span>{t("recentTasks")}</span>
                     </h3>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "12px", overflowY: "auto", maxHeight: "250px", height: "100%", justifyContent: getAllTasks().length === 0 ? "center" : "flex-start" }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "12px", overflowY: "auto", flex: 1, minHeight: 0, justifyContent: getAllTasks().length === 0 ? "center" : "flex-start" }}>
                       {getAllTasks().length === 0 ? (
                         <div className="empty-state-svg-container" style={{ padding: "16px" }}>
                           <svg className="empty-state-svg" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: "80px", height: "80px", marginBottom: "8px" }}>
@@ -2057,7 +2057,7 @@ export default function Dashboard() {
                           </p>
                         </div>
                       ) : (
-                        getAllTasks().slice().reverse().slice(0, 5).map((task) => {
+                        getAllTasks().slice().reverse().slice(0, 10).map((task) => {
                           const project = projects.find(p => p.id === task.projectId);
                           const projectName = project ? project.name : (language === "TH" ? "ไม่มีโปรเจกต์" : "No Project");
                           const projectColor = project ? project.color : "#6b7280";
