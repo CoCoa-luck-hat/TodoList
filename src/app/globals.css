@@ -376,7 +376,7 @@ h1, h2, h3, h4, h5, h6 {
   overflow-x: auto;
   overflow-y: hidden;
   min-height: 0;
-  height: auto;
+  height: 0;
   max-height: 100%;
 }
 
