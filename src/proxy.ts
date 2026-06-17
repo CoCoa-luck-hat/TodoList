@@ -8,7 +8,14 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Allow auth routes, static files, and join pages
-  const publicPaths = ["/login", "/api/auth", "/join"];
+  const publicPaths = [
+    "/login", 
+    "/api/auth", 
+    "/join", 
+    "/api/webhooks/line", 
+    "/api/cron/reminders", 
+    "/api/notifications/send"
+  ];
   const isPublic = publicPaths.some((path) => pathname.startsWith(path));
   const isStaticAsset =
     pathname.startsWith("/_next") ||
