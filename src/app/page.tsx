@@ -3380,8 +3380,32 @@ export default function Dashboard() {
                           style={{ padding: "6px 12px", fontSize: "0.75rem", height: "auto", flexShrink: 0 }}
                           onClick={() => {
                             if (session?.user?.id) {
-                              navigator.clipboard.writeText(`LINK_ACCOUNT_${session.user.id}`);
-                              showToast(language === "TH" ? "คัดลอกข้อความแล้ว!" : "Message copied!", "success");
+                              const textToCopy = `LINK_ACCOUNT_${session.user.id}`;
+                              const handleFallback = () => {
+                                const textArea = document.createElement("textarea");
+                                textArea.value = textToCopy;
+                                textArea.style.position = "fixed";
+                                document.body.appendChild(textArea);
+                                textArea.focus();
+                                textArea.select();
+                                try {
+                                  document.execCommand("copy");
+                                  showToast(language === "TH" ? "คัดลอกข้อความแล้ว!" : "Message copied!", "success");
+                                } catch (err) {
+                                  showToast(language === "TH" ? "คัดลอกไม่สำเร็จ กรุณากดค้างที่ข้อความเพื่อคัดลอกด้วยตนเอง" : "Failed to copy, please copy manually", "error");
+                                }
+                                document.body.removeChild(textArea);
+                              };
+
+                              if (navigator.clipboard && navigator.clipboard.writeText) {
+                                navigator.clipboard.writeText(textToCopy)
+                                  .then(() => {
+                                    showToast(language === "TH" ? "คัดลอกข้อความแล้ว!" : "Message copied!", "success");
+                                  })
+                                  .catch(handleFallback);
+                              } else {
+                                handleFallback();
+                              }
                             }
                           }}
                         >
