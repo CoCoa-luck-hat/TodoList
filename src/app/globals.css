@@ -3850,6 +3850,8 @@ input:checked + .switch-slider:before {
 @media (max-width: 900px) {
   .calendar-layout-wrapper {
     flex-direction: column;
+    height: auto !important;
+    min-height: auto !important;
   }
 
   .calendar-detail-sidebar {
