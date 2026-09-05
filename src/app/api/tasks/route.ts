@@ -162,13 +162,17 @@ export async function POST(request: Request) {
       // Send creation notification asynchronously to assignee or creator
       const targetRecipientId = assigneeId || userId;
       if (targetRecipientId) {
-        sendNotifications({
-          title: assigneeId && assigneeId !== userId ? "📌 มอบหมายงานใหม่" : "📝 สร้างงานใหม่",
-          body: description || "ไม่มีรายละเอียดเพิ่มเติม",
-          type: "create",
-          taskTitle: title,
-          taskDueDate: dueDate || undefined,
-        }, targetRecipientId).catch(console.error);
+        try {
+          await sendNotifications({
+            title: assigneeId && assigneeId !== userId ? "📌 มอบหมายงานใหม่" : "📝 สร้างงานใหม่",
+            body: description || "ไม่มีรายละเอียดเพิ่มเติม",
+            type: "create",
+            taskTitle: title,
+            taskDueDate: dueDate || undefined,
+          }, targetRecipientId);
+        } catch (notifErr) {
+          console.error("Error sending task create notification:", notifErr);
+        }
       }
 
       return NextResponse.json(task);
@@ -287,23 +291,31 @@ export async function PUT(request: Request) {
       // Send completion notification if status changed to DONE (sent specifically to assignee or creator)
       if (status === "DONE" && originalTask.status !== "DONE") {
         const completionRecipientId = task.assigneeId || task.userId || userId;
-        sendNotifications({
-          title: "🎉 งานเสร็จสมบูรณ์!",
-          body: "งานได้รับการเปลี่ยนสถานะเป็น เสร็จสิ้น (DONE) เรียบร้อยแล้ว",
-          type: "complete",
-          taskTitle: task.title,
-        }, completionRecipientId).catch(console.error);
+        try {
+          await sendNotifications({
+            title: "🎉 งานเสร็จสมบูรณ์!",
+            body: "งานได้รับการเปลี่ยนสถานะเป็น เสร็จสิ้น (DONE) เรียบร้อยแล้ว",
+            type: "complete",
+            taskTitle: task.title,
+          }, completionRecipientId);
+        } catch (notifErr) {
+          console.error("Error sending completion notification:", notifErr);
+        }
       }
 
       // Send Task Assigned Notification to the newly assigned user
       if (assigneeId !== undefined && assigneeId !== null && assigneeId !== originalTask.assigneeId) {
-        sendNotifications({
-          title: "📌 คุณได้รับมอบหมายงานใหม่",
-          body: `คุณได้รับมอบหมายงาน: ${task.title}`,
-          type: "create",
-          taskTitle: task.title,
-          taskDueDate: task.dueDate ? task.dueDate.toISOString() : undefined,
-        }, assigneeId).catch(console.error);
+        try {
+          await sendNotifications({
+            title: "📌 คุณได้รับมอบหมายงานใหม่",
+            body: `คุณได้รับมอบหมายงาน: ${task.title}`,
+            type: "create",
+            taskTitle: task.title,
+            taskDueDate: task.dueDate ? task.dueDate.toISOString() : undefined,
+          }, assigneeId);
+        } catch (notifErr) {
+          console.error("Error sending assignment notification:", notifErr);
+        }
       }
 
       return NextResponse.json(task);
