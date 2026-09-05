@@ -261,12 +261,23 @@ async function sendEmailDirect(recipient: string, payload: NotificationPayload) 
     if (smtpTransporter) {
       try {
         const rawFrom = process.env.EMAIL_FROM || (smtpUser ? `Todo-List <${smtpUser}>` : undefined);
-        const from = rawFrom ? rawFrom.replace(/\\"/g, '').trim() : undefined;
+        const text = `${payload.title}: ${payload.taskTitle}\n\n${payload.body}\n${
+          payload.taskDueDate
+            ? `กำหนดส่ง: ${new Date(payload.taskDueDate).toLocaleDateString()}\n`
+            : ""
+        }\nเปิดดูงานในระบบ: ${process.env.NEXTAUTH_URL || "http://localhost:3000"}\n\nส่งอัตโนมัติจากระบบ Todo-List Dashboard`;
+
         const info = await smtpTransporter.sendMail({
           from,
           to: recipient,
+          replyTo: smtpUser || undefined,
           subject,
+          text,
           html,
+          headers: {
+            "X-Application": "Todo-List-Dashboard",
+            "X-Auto-Response-Suppress": "OOF, AutoReply",
+          },
         });
         console.log(`[SMTP] Email notification sent successfully to ${recipient} (Message ID: ${info.messageId})`);
         return;
