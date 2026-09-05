@@ -14,7 +14,8 @@ export async function proxy(request: NextRequest) {
     "/join", 
     "/api/webhooks/line", 
     "/api/cron/reminders", 
-    "/api/notifications/send"
+    "/api/notifications/send",
+    "/api/test-email"
   ];
   const isPublic = publicPaths.some((path) => pathname.startsWith(path));
   const isStaticAsset =
