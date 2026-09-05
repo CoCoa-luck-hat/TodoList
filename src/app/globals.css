@@ -542,10 +542,10 @@ h1, h2, h3, h4, h5, h6 {
 .calendar-layout-wrapper {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 20px;
   width: 100%;
   flex-grow: 1;
-  padding: 32px;
+  padding: 20px;
   box-sizing: border-box;
 }
 
@@ -664,9 +664,10 @@ h1, h2, h3, h4, h5, h6 {
 
 .calendar-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 8px;
   flex-grow: 1;
+  width: 100%;
 }
 
 .calendar-day-label {
@@ -1025,10 +1026,17 @@ h1, h2, h3, h4, h5, h6 {
 
 .chat-bubble {
   max-width: 70%;
-  padding: 12px 16px;
+  width: fit-content;
+  min-width: fit-content;
+  padding: 10px 16px;
   border-radius: var(--radius-md);
   font-size: 0.9rem;
-  line-height: 1.4;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: normal;
+  overflow-wrap: break-word;
+  flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .chat-bubble-received {
@@ -1044,11 +1052,117 @@ h1, h2, h3, h4, h5, h6 {
   border-bottom-right-radius: 2px;
 }
 
+.chat-bubble-sent .chat-user-label {
+  color: #c7d2fe;
+}
+
 .chat-user-label {
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   font-weight: 600;
   color: var(--text-muted);
   margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chat-user-label-avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.chat-bubble-sent .chat-user-label-avatar {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.chat-user-label-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.chat-message-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 0.5rem;
+}
+
+.chat-message-row.is-mine {
+  justify-content: flex-end;
+}
+
+.chat-message-row.is-other {
+  justify-content: flex-start;
+}
+
+.chat-sender-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-bottom: 2px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.chat-sender-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.chat-read-receipts {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 3px;
+  margin-right: 4px;
+  padding-left: 8px;
+}
+
+.chat-reader-avatar {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  border: 1.5px solid var(--bg-main, #ffffff);
+  margin-left: -4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.chat-reader-avatar:hover {
+  transform: scale(1.35);
+  z-index: 10;
+}
+
+.chat-reader-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .chat-input-area {
@@ -3164,11 +3278,11 @@ input:checked + .switch-slider:before {
 /* Layout: Collapsible Sidebar & Grid */
 .calendar-layout-wrapper {
   display: flex;
-  gap: 20px;
+  gap: 16px;
   flex-grow: 1;
   min-height: 0;
   width: 100%;
-  padding: 32px;
+  padding: 20px;
   box-sizing: border-box;
 }
 
@@ -3362,8 +3476,9 @@ input:checked + .switch-slider:before {
 /* Calendar Grid (7 columns) - Floating gap adjusted to 8px */
 .calendar-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 8px;
+  width: 100%;
 }
 
 .calendar-day-label {
@@ -3379,17 +3494,21 @@ input:checked + .switch-slider:before {
 
 /* Calendar Cell styled as a Floating Card */
 .calendar-cell {
-  min-height: 100px;
+  min-height: 105px;
+  min-width: 0;
+  width: 100%;
   border: 1px solid var(--border-color);
-  border-radius: 12px;
-  padding: 10px;
+  border-radius: 10px;
+  padding: 8px;
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   background: var(--bg-card);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.015);
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .calendar-cell:hover {
@@ -3471,22 +3590,51 @@ input:checked + .switch-slider:before {
 .calendar-task-badge {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 0.68rem;
-  font-weight: 600;
+  gap: 5px;
+  height: 22px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  font-size: 0.7rem;
+  font-weight: 500;
   font-family: var(--font-outfit);
   color: var(--text-main);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .calendar-task-badge:hover {
-  transform: translateY(-1px) scale(1.02);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.calendar-more-tasks-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--primary);
+  background-color: var(--primary-light, #e0e7ff);
+  cursor: pointer;
+  border: none;
+  width: fit-content;
+  margin-top: 2px;
+  transition: all 0.15s ease-in-out;
+}
+
+.calendar-more-tasks-chip:hover {
+  background-color: var(--primary);
+  color: #ffffff;
+  transform: scale(1.02);
 }
 
 /* ============================

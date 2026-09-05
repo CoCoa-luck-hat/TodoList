@@ -1,11 +1,42 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
+import nodemailer from "nodemailer";
+import { render } from "@react-email/components";
 import { TaskAssignedEmail } from "@/emails/TaskAssignedEmail";
 import { DailyReportEmail } from "@/emails/DailyReportEmail";
 import { DeadlineReminderEmail } from "@/emails/DeadlineReminderEmail";
 import prisma from "@/lib/db";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const resendApiKey = process.env.RESEND_API_KEY || "";
+const resend = resendApiKey ? new Resend(resendApiKey) : null;
+
+// Initialize Nodemailer SMTP Client (Gmail or custom SMTP)
+const smtpUser = process.env.SMTP_USER || "";
+const smtpPass = (process.env.SMTP_PASS || "").replace(/\s+/g, "");
+const smtpHost = process.env.SMTP_HOST || "smtp.gmail.com";
+const smtpPort = Number(process.env.SMTP_PORT || "465");
+const smtpSecure = process.env.SMTP_SECURE === "true" || smtpPort === 465;
+
+const smtpTransporter =
+  smtpUser && smtpPass
+    ? (smtpHost.includes("gmail") || smtpUser.includes("@gmail.com")
+        ? nodemailer.createTransport({
+            service: "gmail",
+            auth: {
+              user: smtpUser,
+              pass: smtpPass,
+            },
+          })
+        : nodemailer.createTransport({
+            host: smtpHost,
+            port: smtpPort,
+            secure: smtpSecure,
+            auth: {
+              user: smtpUser,
+              pass: smtpPass,
+            },
+          }))
+    : null;
 
 interface TargetUser {
   id: string;
@@ -89,14 +120,29 @@ async function sendNotificationToUser(
       }
 
       if (emailComponent) {
-        emailPromises.push(
-          resend.emails.send({
-            from: "Project To-Do <onboarding@resend.dev>", // TODO: Replace with verified domain
-            to: [recipientEmail],
-            subject: subject,
-            react: emailComponent,
-          })
-        );
+        if (smtpTransporter) {
+          const rawFrom = process.env.EMAIL_FROM || (smtpUser ? `Todo-List <${smtpUser}>` : undefined);
+          const from = rawFrom ? rawFrom.replace(/\\"/g, '').trim() : undefined;
+          emailPromises.push(
+            render(emailComponent).then((html) =>
+              smtpTransporter.sendMail({
+                from,
+                to: recipientEmail,
+                subject,
+                html,
+              })
+            ).catch((err) => console.error(`[SMTP] Error sending to ${recipientEmail}:`, err))
+          );
+        } else if (resend) {
+          emailPromises.push(
+            resend.emails.send({
+              from: "Project To-Do <onboarding@resend.dev>",
+              to: [recipientEmail],
+              subject: subject,
+              react: emailComponent,
+            }).catch((err) => console.error(`[Resend] Error sending to ${recipientEmail}:`, err))
+          );
+        }
       }
     }
 

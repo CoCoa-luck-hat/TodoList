@@ -112,6 +112,12 @@ interface ChatMessage {
   text: string;
   userId?: string | null;
   createdAt: string;
+  sender?: {
+    id: string;
+    name: string | null;
+    image: string | null;
+    email: string;
+  } | null;
 }
 
 interface Settings {
@@ -120,6 +126,58 @@ interface Settings {
   pomodoroDuration: number;
   pomodoroBreak: number;
 }
+
+const renderChatAvatar = (
+  image?: string | null,
+  name?: string | null,
+  size: number = 32,
+  style?: React.CSSProperties
+) => {
+  const avatarStyle: React.CSSProperties = {
+    width: `${size}px`,
+    height: `${size}px`,
+    minWidth: `${size}px`,
+    minHeight: `${size}px`,
+    borderRadius: "50%",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    overflow: "hidden",
+    boxShadow: "0 1px 3px rgba(0, 0, 0, 0.12)",
+    ...style,
+  };
+
+  if (image) {
+    if (image.startsWith("http://") || image.startsWith("https://") || image.startsWith("/")) {
+      return (
+        <div style={avatarStyle}>
+          <img src={image} alt={name || "Avatar"} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        </div>
+      );
+    }
+    return (
+      <div style={{ ...avatarStyle, backgroundColor: "var(--bg-input, #f1f5f9)", fontSize: `${size * 0.55}px` }}>
+        <span>{image}</span>
+      </div>
+    );
+  }
+
+  const initial = (name || "U").trim().charAt(0).toUpperCase();
+  return (
+    <div
+      style={{
+        ...avatarStyle,
+        background: "linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)",
+        color: "#ffffff",
+        fontSize: `${Math.max(10, Math.round(size * 0.42))}px`,
+        fontWeight: 700,
+      }}
+    >
+      <span>{initial}</span>
+    </div>
+  );
+};
 
 // Skeletons for Loading States
 const OverviewSkeleton = () => (
@@ -580,7 +638,16 @@ export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [unassignedTasks, setUnassignedTasks] = useState<Task[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [teamMembersInfo, setTeamMembersInfo] = useState<{userId: string; lastReadAt: string}[]>([]);
+  const [teamMembersInfo, setTeamMembersInfo] = useState<{
+    userId: string;
+    lastReadAt: string;
+    user?: {
+      id: string;
+      name: string | null;
+      image: string | null;
+      email: string;
+    } | null;
+  }[]>([]);
   const [settings, setSettings] = useState<Settings>({
     lineToken: "",
     emailRecipient: "",
@@ -2447,29 +2514,104 @@ export default function Dashboard() {
                       ) : (
                         chatMessages.map((msg) => {
                           const isMyMessage = msg.userId === session?.user?.id || msg.user === (session?.user?.name || session?.user?.email);
+                          const senderAvatar = msg.sender?.image || (isMyMessage ? userProfile?.image : null);
+                          const senderName = msg.sender?.name || msg.user;
+
+                          // Facebook-style readers: team members who read MY message
+                          const readers = isMyMessage
+                            ? teamMembersInfo.filter(
+                                (m) =>
+                                  m.userId !== session?.user?.id &&
+                                  new Date(m.lastReadAt).getTime() >= new Date(msg.createdAt).getTime()
+                              )
+                            : [];
+
                           return (
-                            <div key={msg.id} style={{ display: "flex", flexDirection: "column", alignItems: isMyMessage ? "flex-end" : "flex-start", marginBottom: "0.5rem" }}>
+                            <div
+                              key={msg.id}
+                              style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: isMyMessage ? "flex-end" : "flex-start",
+                                marginBottom: "0.75rem",
+                                width: "100%",
+                              }}
+                            >
                               <div
-                                className={`chat-bubble ${isMyMessage ? "chat-bubble-sent" : "chat-bubble-received"}`}
-                                style={{ marginBottom: 0 }}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "flex-end",
+                                  gap: "8px",
+                                  maxWidth: "80%",
+                                  width: "fit-content",
+                                  flexDirection: isMyMessage ? "row-reverse" : "row",
+                                }}
                               >
-                                <div className="chat-user-label">{msg.user}</div>
-                                <div>{msg.text}</div>
-                              </div>
-                              {isMyMessage && (() => {
-                                const readCount = teamMembersInfo.filter(m => m.userId !== session?.user?.id && new Date(m.lastReadAt).getTime() >= new Date(msg.createdAt).getTime()).length;
-                                if (readCount > 0) {
-                                  return (
-                                    <div style={{ fontSize: "0.7rem", color: "var(--text-secondary)", marginTop: "2px", marginRight: "5px" }}>
-                                      {language === "TH" 
-                                        ? (readCount === 1 && teamMembersInfo.length === 2 ? "อ่านแล้ว" : `อ่านแล้ว ${readCount} คน`)
-                                        : (readCount === 1 && teamMembersInfo.length === 2 ? "Read" : `Read by ${readCount}`)
-                                      }
+                                {!isMyMessage && renderChatAvatar(senderAvatar, senderName, 32)}
+                                <div
+                                  className={`chat-bubble ${isMyMessage ? "chat-bubble-sent" : "chat-bubble-received"}`}
+                                  style={{
+                                    marginBottom: 0,
+                                    width: "fit-content",
+                                    minWidth: "fit-content",
+                                    flexShrink: 0,
+                                    display: "inline-block",
+                                  }}
+                                >
+                                  {!isMyMessage && (
+                                    <div
+                                      className="chat-user-label"
+                                      style={{
+                                        marginBottom: "4px",
+                                        fontSize: "0.75rem",
+                                        fontWeight: 600,
+                                        color: "var(--text-muted)",
+                                      }}
+                                    >
+                                      {senderName}
                                     </div>
-                                  );
-                                }
-                                return null;
-                              })()}
+                                  )}
+                                  <div style={{ wordBreak: "normal", overflowWrap: "break-word", lineHeight: 1.45, whiteSpace: "pre-wrap" }}>
+                                    {msg.text}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Facebook-style Read Receipts (under my sent messages) */}
+                              {isMyMessage && readers.length > 0 && (
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "flex-end",
+                                    marginTop: "4px",
+                                    marginRight: "4px",
+                                    paddingLeft: "8px",
+                                  }}
+                                >
+                                  {readers.map((reader) => {
+                                    const readerName = reader.user?.name || reader.user?.email || (language === "TH" ? "สมาชิก" : "Member");
+                                    const readerAvatar = reader.user?.image;
+                                    const tooltipText = language === "TH" ? `อ่านแล้วโดย ${readerName}` : `Seen by ${readerName}`;
+                                    return (
+                                      <div
+                                        key={reader.userId}
+                                        title={tooltipText}
+                                        style={{
+                                          marginLeft: "-4px",
+                                          cursor: "pointer",
+                                          transition: "transform 0.15s ease",
+                                        }}
+                                      >
+                                        {renderChatAvatar(readerAvatar, readerName, 18, {
+                                          border: "1.5px solid var(--bg-card, #ffffff)",
+                                          boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                                        })}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </div>
                           );
                         })
@@ -2924,7 +3066,7 @@ export default function Dashboard() {
                 className="btn btn-danger"
                 onClick={() => {
                   playSFX("delete");
-                  signOut({ callbackUrl: "/login" });
+                  signOut({ callbackUrl: "/login?logout=success" });
                 }}
                 style={{ backgroundColor: "var(--danger)", color: "white" }}
               >
@@ -5012,39 +5154,49 @@ const CalendarPanel = ({
                             <Plus size={12} />
                           </button>
                         </div>
-                        <div style={{ display: "flex", flexDirection: "column", gap: "4px", overflowY: "auto", flexGrow: 1 }}>
-                          {dateTasks.slice(0, 4).map((t) => {
+                        <div style={{ display: "flex", flexDirection: "column", gap: "3px", overflow: "hidden", flexGrow: 1, minWidth: 0, width: "100%" }}>
+                          {dateTasks.slice(0, 2).map((t) => {
                             const proj = getProjectDetails(t.projectId);
                             return (
                               <div
                                 key={t.id}
                                 className="calendar-task-badge"
                                 style={{
-                                  backgroundColor: proj.color + "12",
-                                  borderColor: proj.color + "40",
+                                  backgroundColor: proj.color + "14",
+                                  borderColor: proj.color + "30",
                                   borderLeft: `3px solid ${proj.color}`,
+                                  minWidth: 0,
+                                  width: "100%",
                                 }}
                                 title={t.title + (t.assignee ? ` (${t.assignee.name || t.assignee.email})` : "")}
                               >
                                 <div
                                   style={{
-                                    width: "6px",
-                                    height: "6px",
+                                    width: "5px",
+                                    height: "5px",
                                     borderRadius: "50%",
                                     backgroundColor: getPriorityBulletColor(t.priority),
                                     flexShrink: 0
                                   }}
                                 />
-                                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flexGrow: 1, minWidth: 0 }}>
                                   {t.title}
                                 </span>
                               </div>
                             );
                           })}
-                          {dateTasks.length > 4 && (
-                            <div style={{ fontSize: "0.65rem", color: "var(--text-muted)", fontWeight: 700, paddingLeft: "6px" }}>
-                              +{dateTasks.length - 4} more
-                            </div>
+                          {dateTasks.length > 2 && (
+                            <button
+                              type="button"
+                              className="calendar-more-tasks-chip"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedDate(cell.date);
+                              }}
+                              title={language === "TH" ? "คลิกเพื่อดูงานทั้งหมดของวันนี้" : "Click to view all tasks for this day"}
+                            >
+                              +{dateTasks.length - 2} {language === "TH" ? "งาน" : "more"}
+                            </button>
                           )}
                         </div>
                       </div>

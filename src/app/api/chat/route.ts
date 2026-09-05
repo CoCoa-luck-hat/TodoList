@@ -28,6 +28,16 @@ export async function GET(request: Request) {
       where: {
         teamId: teamId,
       },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            name: true,
+            image: true,
+            email: true,
+          },
+        },
+      },
       orderBy: {
         createdAt: "asc",
       },
@@ -37,7 +47,18 @@ export async function GET(request: Request) {
     if (teamId) {
       const teamMembers = await prisma.teamMember.findMany({
         where: { teamId },
-        select: { userId: true, lastReadAt: true },
+        select: {
+          userId: true,
+          lastReadAt: true,
+          user: {
+            select: {
+              id: true,
+              name: true,
+              image: true,
+              email: true,
+            },
+          },
+        },
       });
       return NextResponse.json({ messages, teamMembers });
     }
@@ -80,6 +101,16 @@ export async function POST(request: Request) {
         text,
         userId: session.user.id,
         teamId: teamId || null,
+      },
+      include: {
+        sender: {
+          select: {
+            id: true,
+            name: true,
+            image: true,
+            email: true,
+          },
+        },
       },
     });
 

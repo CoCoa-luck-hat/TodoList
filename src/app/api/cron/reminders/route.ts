@@ -21,27 +21,29 @@ export async function GET(req: Request) {
           lte: tomorrow,
         },
         status: {
-          not: "DONE"
+          not: "DONE",
         },
-        assigneeId: {
-          not: null
-        }
+        OR: [
+          { assigneeId: { not: null } },
+          { userId: { not: null } },
+        ],
       },
       include: {
         assignee: true,
         project: {
           include: {
-            team: true
-          }
-        }
-      }
+            team: true,
+          },
+        },
+      },
     });
 
     const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
     let sentCount = 0;
 
     for (const task of upcomingTasks) {
-      if (task.assigneeId) {
+      const recipientId = task.assigneeId || task.userId;
+      if (recipientId) {
         let teamName = task.project?.team?.name || "your project";
 
         // Dispatch notification
@@ -49,14 +51,14 @@ export async function GET(req: Request) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            userId: task.assigneeId,
+            userId: recipientId,
             type: "DEADLINE",
             data: {
               taskTitle: task.title,
               dueDate: task.dueDate,
               projectOrTeamName: teamName,
-            }
-          })
+            },
+          }),
         });
         sentCount++;
       }

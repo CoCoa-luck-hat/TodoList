@@ -4,6 +4,8 @@ import React, { useState, useEffect, Suspense } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLanguage } from "../context/LanguageContext";
+import { useToast } from "../context/ToastContext";
+import { playSFX } from "@/lib/sound";
 import {
   Eye,
   EyeOff,
@@ -48,6 +50,7 @@ const loginTranslations = {
     errorPasswordMismatch: "Passwords do not match",
     errorPasswordShort: "Password must be at least 6 characters",
     successRegister: "Account created! Signing in...",
+    logoutSuccess: "You have been logged out successfully",
   },
   th: {
     welcome: "ยินดีต้อนรับ",
@@ -79,6 +82,7 @@ const loginTranslations = {
     errorPasswordMismatch: "รหัสผ่านไม่ตรงกัน",
     errorPasswordShort: "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร",
     successRegister: "สร้างบัญชีสำเร็จ! กำลังเข้าสู่ระบบ...",
+    logoutSuccess: "ออกจากระบบเรียบร้อยแล้ว",
   },
 };
 
@@ -97,6 +101,7 @@ function LoginContent() {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || "/";
   const { language, setLanguage } = useLanguage();
+  const { showToast } = useToast();
   const langKey = language.toLowerCase() as "en" | "th";
   const t = loginTranslations[langKey] || loginTranslations.en;
 
@@ -131,6 +136,17 @@ function LoginContent() {
     "#10b981",
     "#6366f1",
   ];
+
+  // Show Toast and gentle notification chime when redirected from logout
+  useEffect(() => {
+    if (searchParams.get("logout") === "success") {
+      showToast(t.logoutSuccess, "info");
+      playSFX("notification");
+      if (typeof window !== "undefined") {
+        window.history.replaceState(null, "", window.location.pathname);
+      }
+    }
+  }, [searchParams, showToast, t.logoutSuccess]);
 
   useEffect(() => {
     setError("");

@@ -159,14 +159,17 @@ export async function POST(request: Request) {
         },
       });
 
-      // Send creation notification asynchronously
-      sendNotifications({
-        title: "📝 New Task Created",
-        body: description || "No description provided.",
-        type: "create",
-        taskTitle: title,
-        taskDueDate: dueDate || undefined,
-      }, userId).catch(console.error);
+      // Send creation notification asynchronously to assignee or creator
+      const targetRecipientId = assigneeId || userId;
+      if (targetRecipientId) {
+        sendNotifications({
+          title: assigneeId && assigneeId !== userId ? "📌 มอบหมายงานใหม่" : "📝 สร้างงานใหม่",
+          body: description || "ไม่มีรายละเอียดเพิ่มเติม",
+          type: "create",
+          taskTitle: title,
+          taskDueDate: dueDate || undefined,
+        }, targetRecipientId).catch(console.error);
+      }
 
       return NextResponse.json(task);
     }
@@ -191,7 +194,7 @@ export async function POST(request: Request) {
         },
       });
       if (!task) {
-        return NextResponse.json({ error: "Task not found or unauthorized" }, { status: 404 });
+        return NextResponse.json({ error: "Task not found or access denied" }, { status: 404 });
       }
 
       const subtask = await prisma.subTask.create({
@@ -203,32 +206,34 @@ export async function POST(request: Request) {
       return NextResponse.json(subtask);
     }
 
-    return NextResponse.json({ error: "Invalid actionType" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   } catch (error) {
-    console.error("POST Tasks/Projects error:", error);
-    return NextResponse.json({ error: "Operation failed" }, { status: 500 });
+    console.error("POST Tasks error:", error);
+    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }
 
 export async function PUT(request: Request) {
   try {
     const session = await auth();
-    if (!session || !session.user) {
+    if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const userId = session.user.id;
 
+    const userId = session.user.id;
     const body = await request.json();
-    const { actionType, teamId } = body; // "task" | "subtask" | "project"
+    const { actionType = "task" } = body;
 
     if (actionType === "task") {
-      const { id, title, description, status, priority, dueDate, projectId, assigneeId } = body;
+      const { id, title, description, status, priority, dueDate, projectId, assigneeId, teamId } = body;
       
+      // Verify access to update
       const originalTask = await prisma.task.findFirst({
         where: {
           id,
           OR: [
             { userId },
+            { assigneeId: userId },
             {
               team: {
                 members: {
@@ -241,7 +246,7 @@ export async function PUT(request: Request) {
       });
 
       if (!originalTask) {
-        return NextResponse.json({ error: "Task not found or unauthorized" }, { status: 404 });
+        return NextResponse.json({ error: "Task not found or access denied" }, { status: 404 });
       }
 
       // Verify project ownership if updating projectId
@@ -279,39 +284,26 @@ export async function PUT(request: Request) {
         },
       });
 
-      // Send completion notification if status changed to DONE
+      // Send completion notification if status changed to DONE (sent specifically to assignee or creator)
       if (status === "DONE" && originalTask.status !== "DONE") {
+        const completionRecipientId = task.assigneeId || task.userId || userId;
         sendNotifications({
-          title: "🎉 Task Completed!",
-          body: `Good job! The task has been successfully marked as complete.`,
+          title: "🎉 งานเสร็จสมบูรณ์!",
+          body: "งานได้รับการเปลี่ยนสถานะเป็น เสร็จสิ้น (DONE) เรียบร้อยแล้ว",
           type: "complete",
           taskTitle: task.title,
-        }, userId).catch(console.error);
+        }, completionRecipientId).catch(console.error);
       }
 
-      // Send Task Assigned Notification
+      // Send Task Assigned Notification to the newly assigned user
       if (assigneeId !== undefined && assigneeId !== null && assigneeId !== originalTask.assigneeId) {
-        let teamName = "your project";
-        if (teamId) {
-          const team = await prisma.team.findUnique({ where: { id: teamId } });
-          if (team) teamName = team.name;
-        }
-
-        const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
-        fetch(`${baseUrl}/api/notifications/send`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId: assigneeId,
-            type: "TASK_ASSIGNED",
-            data: {
-              taskTitle: task.title,
-              assignedBy: session.user.name || "A team member",
-              dueDate: task.dueDate,
-              projectOrTeamName: teamName,
-            }
-          })
-        }).catch(console.error);
+        sendNotifications({
+          title: "📌 คุณได้รับมอบหมายงานใหม่",
+          body: `คุณได้รับมอบหมายงาน: ${task.title}`,
+          type: "create",
+          taskTitle: task.title,
+          taskDueDate: task.dueDate ? task.dueDate.toISOString() : undefined,
+        }, assigneeId).catch(console.error);
       }
 
       return NextResponse.json(task);
