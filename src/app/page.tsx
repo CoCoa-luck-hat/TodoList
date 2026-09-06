@@ -85,6 +85,13 @@ interface UserInfo {
   image: string | null;
 }
 
+interface TaskAssigneeItem {
+  id: string;
+  taskId: string;
+  userId: string;
+  user: UserInfo;
+}
+
 interface Task {
   id: string;
   title: string;
@@ -97,6 +104,7 @@ interface Task {
   createdAt: string;
   assigneeId?: string | null;
   assignee?: UserInfo | null;
+  assignees?: TaskAssigneeItem[];
 }
 
 interface Project {
@@ -691,7 +699,7 @@ export default function Dashboard() {
   const [newTeamName, setNewTeamName] = useState("");
   const [newTeamDesc, setNewTeamDesc] = useState("");
   const [newTeamColor, setNewTeamColor] = useState("#6366f1");
-  const [newTaskAssigneeId, setNewTaskAssigneeId] = useState("");
+  const [newTaskAssigneeIds, setNewTaskAssigneeIds] = useState<string[]>([]);
   const [filterAssigneeId, setFilterAssigneeId] = useState<string>("all");
   const [settingsTab, setSettingsTab] = useState<"profile" | "preferences" | "team" | "notifications">("profile");
   const [isMembersOpen, setIsMembersOpen] = useState(true);
@@ -1132,7 +1140,10 @@ export default function Dashboard() {
     setNewTaskPriority(task.priority);
     setNewTaskDueDate(task.dueDate ? new Date(task.dueDate).toISOString().split("T")[0] : "");
     setNewTaskProjectId(task.projectId || "");
-    setNewTaskAssigneeId(task.assigneeId || "");
+    const initialAssignees = task.assignees && task.assignees.length > 0
+      ? task.assignees.map((a: any) => a.userId)
+      : (task.assigneeId ? [task.assigneeId] : []);
+    setNewTaskAssigneeIds(initialAssignees);
     setIsTaskModalOpen(true);
     playSFX("click");
   };
@@ -1238,7 +1249,8 @@ export default function Dashboard() {
       }
       if (activeWorkspace !== "personal") {
         payload.teamId = activeWorkspace.id;
-        payload.assigneeId = newTaskAssigneeId || null;
+        payload.assigneeIds = newTaskAssigneeIds;
+        payload.assigneeId = newTaskAssigneeIds[0] || null;
       }
       
       const res = await fetch(url, {
@@ -1252,7 +1264,7 @@ export default function Dashboard() {
         setNewTaskDesc("");
         setNewTaskDueDate("");
         setNewTaskProjectId("");
-        setNewTaskAssigneeId("");
+        setNewTaskAssigneeIds([]);
         setEditingTask(null);
         setIsTaskModalOpen(false);
         fetchData();
@@ -1464,7 +1476,7 @@ export default function Dashboard() {
     try {
       // Find completed tasks for the current user/workspace
       const completedTasks = getAllTasks()
-        .filter((t) => t.status === "DONE" && (activeWorkspace === "personal" || t.assigneeId === session?.user?.id))
+        .filter((t) => t.status === "DONE" && (activeWorkspace === "personal" || t.assigneeId === session?.user?.id || t.assignees?.some(a => a.userId === session?.user?.id)))
         .map((t) => t.title);
 
       const isPersonal = activeWorkspace === "personal";
@@ -1621,9 +1633,16 @@ export default function Dashboard() {
     const all = getAllTasks();
     if (activeWorkspace === "personal") return all;
     if (filterAssigneeId === "all") return all;
-    if (filterAssigneeId === "unassigned") return all.filter(t => !t.assigneeId);
-    return all.filter(t => t.assigneeId === filterAssigneeId);
+    if (filterAssigneeId === "unassigned") {
+      return all.filter(t => !t.assigneeId && (!t.assignees || t.assignees.length === 0));
+    }
+    return all.filter(t => (
+      t.assigneeId === filterAssigneeId ||
+      t.assignees?.some(a => a.userId === filterAssigneeId)
+    ));
   };
+
+
 
   return (
     <>
@@ -2866,7 +2885,7 @@ export default function Dashboard() {
         {/* B. Task Modal */}
         <Modal
           isOpen={isTaskModalOpen}
-          onClose={() => { setEditingTask(null); setIsTaskModalOpen(false); }}
+          onClose={() => { setEditingTask(null); setIsTaskModalOpen(false); setNewTaskAssigneeIds([]); }}
           title={editingTask ? t("modalEditTask") : t("modalCreateTask")}
         >
           <form onSubmit={handleSubmitTask} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -2936,18 +2955,98 @@ export default function Dashboard() {
 
             {activeWorkspace !== "personal" && (
               <div className="form-group">
-                <label className="form-label">{language === "TH" ? "ผู้รับผิดชอบงาน" : "Assignee"}</label>
-                <CustomSelect
-                  value={newTaskAssigneeId}
-                  onChange={(val) => setNewTaskAssigneeId(val)}
-                  options={[
-                    { value: "", label: language === "TH" ? "ไม่ได้มอบหมาย" : "Unassigned" },
-                    ...(activeWorkspace.members || []).map((m: any) => ({
-                      value: m.user.id,
-                      label: m.user.name || m.user.email
-                    }))
-                  ]}
-                />
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                  <label className="form-label" style={{ margin: 0, display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span>{language === "TH" ? "ผู้รับผิดชอบงาน" : "Assignees"}</span>
+                    <span style={{ fontSize: "0.75rem", color: newTaskAssigneeIds.length > 0 ? "var(--primary)" : "var(--text-muted)", fontWeight: 600 }}>
+                      {newTaskAssigneeIds.length > 0
+                        ? `(${newTaskAssigneeIds.length} ${language === "TH" ? "คน" : "selected"})`
+                        : `(${language === "TH" ? "ยังไม่ได้ระบุ" : "Unassigned"})`}
+                    </span>
+                  </label>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <button
+                      type="button"
+                      className="assignee-quick-btn"
+                      onClick={() => {
+                        const allIds = (activeWorkspace.members || [])
+                          .map((m: any) => m.user?.id)
+                          .filter(Boolean);
+                        if (newTaskAssigneeIds.length === allIds.length) {
+                          setNewTaskAssigneeIds([]);
+                        } else {
+                          setNewTaskAssigneeIds(allIds);
+                        }
+                      }}
+                    >
+                      {(() => {
+                        const allIds = (activeWorkspace.members || [])
+                          .map((m: any) => m.user?.id)
+                          .filter(Boolean);
+                        const isAll = allIds.length > 0 && newTaskAssigneeIds.length === allIds.length;
+                        return isAll
+                          ? (language === "TH" ? "ยกเลิกทุกคน" : "Deselect All")
+                          : (language === "TH" ? "เลือกทุกคน" : "Select All");
+                      })()}
+                    </button>
+                    {newTaskAssigneeIds.length > 0 && (
+                      <button
+                        type="button"
+                        className="assignee-quick-btn"
+                        style={{ background: "rgba(239, 68, 68, 0.1)", color: "#ef4444", borderColor: "rgba(239, 68, 68, 0.25)" }}
+                        onClick={() => setNewTaskAssigneeIds([])}
+                      >
+                        {language === "TH" ? "ล้างค่า" : "Clear"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="assignee-selector-container">
+                  <div className="assignee-member-list">
+                    {(activeWorkspace.members || []).map((m: any) => {
+                      if (!m.user) return null;
+                      const isSelected = newTaskAssigneeIds.includes(m.user.id);
+                      return (
+                        <div
+                          key={m.user.id}
+                          className={`assignee-member-item ${isSelected ? "selected" : ""}`}
+                          onClick={() => {
+                            setNewTaskAssigneeIds(prev =>
+                              prev.includes(m.user.id)
+                                ? prev.filter(id => id !== m.user.id)
+                                : [...prev, m.user.id]
+                            );
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => {}} // Controlled by item click
+                            style={{ cursor: "pointer", accentColor: "var(--primary)" }}
+                          />
+                          <div className="assignee-member-avatar">
+                            {m.user.image && m.user.image.startsWith("http") ? (
+                              <img src={m.user.image} alt={m.user.name || "User"} />
+                            ) : m.user.image ? (
+                              <span>{m.user.image}</span>
+                            ) : (
+                              (m.user.name || m.user.email || "?")[0].toUpperCase()
+                            )}
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", flexGrow: 1, minWidth: 0 }}>
+                            <span style={{ fontSize: "0.85rem", fontWeight: 600, color: "var(--text-main)", lineHeight: "1.2", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {m.user.name || "User"}
+                            </span>
+                            <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {m.user.email}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             )}
 
@@ -4343,6 +4442,54 @@ export default function Dashboard() {
     );
   }
 
+// Subcomponent: Overlapping Assignees Avatar Stack
+const TaskAssigneesAvatarGroup = ({ task }: { task: Task }) => {
+  const { language } = useLanguage();
+  const assigneesList: UserInfo[] = [];
+  if (task.assignees && task.assignees.length > 0) {
+    task.assignees.forEach((a) => {
+      if (a.user) assigneesList.push(a.user);
+    });
+  } else if (task.assignee) {
+    assigneesList.push(task.assignee);
+  }
+
+  if (assigneesList.length === 0) return null;
+
+  const maxDisplay = 3;
+  const displayed = assigneesList.slice(0, maxDisplay);
+  const remainingCount = assigneesList.length - maxDisplay;
+  const allNames = assigneesList.map((u) => u.name || u.email).join(", ");
+
+  return (
+    <div
+      className="task-assignees-group"
+      title={`${language === "TH" ? "ผู้รับผิดชอบ: " : "Assignees: "}${allNames}`}
+    >
+      {displayed.map((user, idx) => (
+        <div
+          key={user.id || idx}
+          className="task-assignee-avatar"
+          title={user.name || user.email}
+        >
+          {user.image && user.image.startsWith("http") ? (
+            <img src={user.image} alt={user.name || "User"} />
+          ) : user.image ? (
+            <span style={{ fontSize: "0.8rem" }}>{user.image}</span>
+          ) : (
+            (user.name || user.email || "?")[0].toUpperCase()
+          )}
+        </div>
+      ))}
+      {remainingCount > 0 && (
+        <div className="task-assignees-more" title={allNames}>
+          +{remainingCount}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Subcomponent: Draggable Kanban Task Card
 const DraggableDraggableTask = ({
   task,
@@ -4607,23 +4754,7 @@ const DraggableDraggableTask = ({
                       </span>
                     )}
 
-                    {task.assignee && (
-                      <div
-                        className="task-assignee-avatar"
-                        title={task.assignee.name || task.assignee.email}
-                      >
-                        {task.assignee.image && task.assignee.image.startsWith("http") ? (
-                          <img
-                            src={task.assignee.image}
-                            alt={task.assignee.name || "User"}
-                          />
-                        ) : task.assignee.image ? (
-                          <span style={{ fontSize: "0.8rem" }}>{task.assignee.image}</span>
-                        ) : (
-                          (task.assignee.name || task.assignee.email)[0].toUpperCase()
-                        )}
-                      </div>
-                    )}
+                    <TaskAssigneesAvatarGroup task={task} />
                   </div>
                 </div>
               </div>
@@ -4870,23 +5001,7 @@ const SidebarTaskCard = ({
               </span>
             )}
 
-            {task.assignee && (
-              <div
-                className="task-assignee-avatar"
-                title={task.assignee.name || task.assignee.email}
-              >
-                {task.assignee.image && task.assignee.image.startsWith("http") ? (
-                  <img
-                    src={task.assignee.image}
-                    alt={task.assignee.name || "User"}
-                  />
-                ) : task.assignee.image ? (
-                  <span style={{ fontSize: "0.8rem" }}>{task.assignee.image}</span>
-                ) : (
-                  (task.assignee.name || task.assignee.email)[0].toUpperCase()
-                )}
-              </div>
-            )}
+            <TaskAssigneesAvatarGroup task={task} />
           </div>
         </div>
       </div>
@@ -5168,20 +5283,37 @@ const CalendarPanel = ({
                                   minWidth: 0,
                                   width: "100%",
                                 }}
-                                title={t.title + (t.assignee ? ` (${t.assignee.name || t.assignee.email})` : "")}
+                                title={t.title + (() => {
+                                  const names = t.assignees && t.assignees.length > 0
+                                    ? t.assignees.map(a => a.user?.name || a.user?.email).filter(Boolean).join(", ")
+                                    : (t.assignee ? (t.assignee.name || t.assignee.email) : "");
+                                  return names ? ` (${names})` : "";
+                                })()}
                               >
-                                <div
-                                  style={{
-                                    width: "5px",
-                                    height: "5px",
-                                    borderRadius: "50%",
-                                    backgroundColor: getPriorityBulletColor(t.priority),
-                                    flexShrink: 0
-                                  }}
-                                />
-                                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flexGrow: 1, minWidth: 0 }}>
-                                  {t.title}
-                                </span>
+                                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                  <div
+                                    style={{
+                                      width: "5px",
+                                      height: "5px",
+                                      borderRadius: "50%",
+                                      backgroundColor: getPriorityBulletColor(t.priority),
+                                      flexShrink: 0
+                                    }}
+                                  />
+                                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flexGrow: 1, minWidth: 0 }}>
+                                    {t.title}
+                                  </span>
+                                </div>
+                                {(() => {
+                                   const names = t.assignees && t.assignees.length > 0
+                                     ? t.assignees.map(a => a.user?.name || a.user?.email).filter(Boolean).join(", ")
+                                     : (t.assignee ? (t.assignee.name || t.assignee.email) : "");
+                                   return names ? (
+                                     <span style={{ fontSize: "0.65rem", color: "var(--text-muted)", paddingLeft: "12px" }}>
+                                       {language === "TH" ? "ผู้รับผิดชอบ: " : "Assignee: "}{names}
+                                     </span>
+                                   ) : null;
+                                 })()}
                               </div>
                             );
                           })}
@@ -5271,11 +5403,16 @@ const CalendarPanel = ({
                                     <span style={{ fontSize: "0.68rem", color: proj.color, fontWeight: 700 }}>
                                       {proj.name}
                                     </span>
-                                    {t.assignee && (
-                                      <span style={{ fontSize: "0.65rem", color: "var(--text-muted)" }}>
-                                        Assignee: {t.assignee.name || t.assignee.email}
-                                      </span>
-                                    )}
+                                    {(() => {
+                                      const names = t.assignees && t.assignees.length > 0
+                                        ? t.assignees.map(a => a.user?.name || a.user?.email).filter(Boolean).join(", ")
+                                        : (t.assignee ? (t.assignee.name || t.assignee.email) : "");
+                                      return names ? (
+                                        <span style={{ fontSize: "0.65rem", color: "var(--text-muted)" }}>
+                                          {language === "TH" ? "ผู้รับผิดชอบ: " : "Assignee: "}{names}
+                                        </span>
+                                      ) : null;
+                                    })()}
                                   </div>
                                 </div>
                               );

@@ -75,17 +75,17 @@ export async function DELETE(
       return NextResponse.json({ error: "Team not found" }, { status: 404 });
     }
 
-    // Owner checks
-    if (team.ownerId !== userId) {
-      return NextResponse.json({ error: "Forbidden (Owner only)" }, { status: 403 });
+    // Allow team owner to remove members, or a member to remove (leave) themselves
+    if (team.ownerId !== userId && userId !== memberUserId) {
+      return NextResponse.json({ error: "Forbidden (Owner only or self-exit)" }, { status: 403 });
     }
 
-    // Owner cannot delete themselves
+    // Owner cannot leave or delete themselves from team ownership
     if (team.ownerId === memberUserId) {
       return NextResponse.json({ error: "Owner cannot be removed from the team" }, { status: 400 });
     }
 
-    // Delete membership
+    // 1. Delete membership
     await prisma.teamMember.delete({
       where: {
         userId_teamId: {
@@ -94,6 +94,30 @@ export async function DELETE(
         },
       },
     });
+
+    // 2. Clean up task assignments in this team for this member
+    await prisma.taskAssignee.deleteMany({
+      where: {
+        userId: memberUserId,
+        task: { teamId },
+      },
+    });
+
+    // 3. For tasks where assigneeId was this member, reassign to remaining assignee or set null (Unassigned)
+    const affectedTasks = await prisma.task.findMany({
+      where: { teamId, assigneeId: memberUserId },
+      include: {
+        assignees: { take: 1 },
+      },
+    });
+
+    for (const t of affectedTasks) {
+      const fallbackAssignee = t.assignees[0]?.userId || null;
+      await prisma.task.update({
+        where: { id: t.id },
+        data: { assigneeId: fallbackAssignee },
+      });
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

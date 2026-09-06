@@ -268,7 +268,7 @@ async function sendEmailDirect(recipient: string, payload: NotificationPayload) 
         }\nเปิดดูงานในระบบ: ${process.env.NEXTAUTH_URL || "http://localhost:3000"}\n\nส่งอัตโนมัติจากระบบ Todo-List Dashboard`;
 
         const info = await smtpTransporter.sendMail({
-          from,
+          from: rawFrom || "Todo-List <noreply@gmail.com>",
           to: recipient,
           replyTo: smtpUser || undefined,
           subject,

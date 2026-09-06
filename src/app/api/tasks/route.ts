@@ -22,16 +22,25 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: "Access denied" }, { status: 403 });
       }
 
+      const taskInclude = {
+        subtasks: true,
+        assignee: {
+          select: { id: true, name: true, email: true, image: true },
+        },
+        assignees: {
+          include: {
+            user: {
+              select: { id: true, name: true, email: true, image: true },
+            },
+          },
+        },
+      };
+
       const projects = await prisma.project.findMany({
         where: { teamId },
         include: {
           tasks: {
-            include: {
-              subtasks: true,
-              assignee: {
-                select: { id: true, name: true, email: true, image: true },
-              },
-            },
+            include: taskInclude,
             orderBy: {
               createdAt: "asc",
             },
@@ -44,25 +53,32 @@ export async function GET(request: Request) {
 
       const unassignedTasks = await prisma.task.findMany({
         where: { projectId: null, teamId },
-        include: {
-          subtasks: true,
-          assignee: {
-            select: { id: true, name: true, email: true, image: true },
-          },
-        },
+        include: taskInclude,
         orderBy: { createdAt: "asc" },
       });
 
       return NextResponse.json({ projects, unassignedTasks });
     } else {
+      const taskInclude = {
+        subtasks: true,
+        assignee: {
+          select: { id: true, name: true, email: true, image: true },
+        },
+        assignees: {
+          include: {
+            user: {
+              select: { id: true, name: true, email: true, image: true },
+            },
+          },
+        },
+      };
+
       // Personal workspace (teamId: null)
       const projects = await prisma.project.findMany({
         where: { userId, teamId: null },
         include: {
           tasks: {
-            include: {
-              subtasks: true,
-            },
+            include: taskInclude,
             orderBy: {
               createdAt: "asc",
             },
@@ -75,7 +91,7 @@ export async function GET(request: Request) {
 
       const unassignedTasks = await prisma.task.findMany({
         where: { projectId: null, userId, teamId: null },
-        include: { subtasks: true },
+        include: taskInclude,
         orderBy: { createdAt: "asc" },
       });
 
@@ -122,7 +138,7 @@ export async function POST(request: Request) {
     }
 
     if (actionType === "task") {
-      const { title, description, priority, dueDate, projectId, assigneeId } = body;
+      const { title, description, priority, dueDate, projectId, assigneeId, assigneeIds } = body;
 
       // Verify project ownership / teamId
       if (projectId) {
@@ -136,14 +152,25 @@ export async function POST(request: Request) {
         }
       }
 
-      // Verify assignee is member of the team
-      if (assigneeId && teamId) {
-        const isAssigneeMember = await prisma.teamMember.findFirst({
-          where: { teamId, userId: assigneeId },
+      // Normalize assigneeIds:
+      let targetAssigneeIds: string[] = [];
+      if (Array.isArray(assigneeIds)) {
+        targetAssigneeIds = assigneeIds.filter((id): id is string => typeof id === "string" && id.trim() !== "");
+      } else if (assigneeId) {
+        targetAssigneeIds = [assigneeId];
+      }
+
+      // Verify assignees are members of the team
+      if (targetAssigneeIds.length > 0 && teamId) {
+        const teamMembers = await prisma.teamMember.findMany({
+          where: {
+            teamId,
+            userId: { in: targetAssigneeIds },
+          },
+          select: { userId: true },
         });
-        if (!isAssigneeMember) {
-          return NextResponse.json({ error: "Assignee is not a team member" }, { status: 400 });
-        }
+        const validMemberIds = new Set(teamMembers.map(m => m.userId));
+        targetAssigneeIds = targetAssigneeIds.filter(id => validMemberIds.has(id));
       }
 
       const task = await prisma.task.create({
@@ -155,23 +182,38 @@ export async function POST(request: Request) {
           projectId: projectId || null,
           userId,
           teamId: teamId || null,
-          assigneeId: assigneeId || null,
+          assigneeId: targetAssigneeIds[0] || null,
+          assignees: targetAssigneeIds.length > 0 ? {
+            create: targetAssigneeIds.map(uid => ({ userId: uid })),
+          } : undefined,
+        },
+        include: {
+          assignees: {
+            include: {
+              user: {
+                select: { id: true, name: true, email: true, image: true },
+              },
+            },
+          },
         },
       });
 
-      // Send creation notification asynchronously to assignee or creator
-      const targetRecipientId = assigneeId || userId;
-      if (targetRecipientId) {
+      // Send creation notification asynchronously to all assignees or creator
+      const notificationRecipients = targetAssigneeIds.length > 0
+        ? Array.from(new Set(targetAssigneeIds))
+        : [userId];
+
+      for (const recipientId of notificationRecipients) {
         try {
           await sendNotifications({
-            title: assigneeId && assigneeId !== userId ? "📌 มอบหมายงานใหม่" : "📝 สร้างงานใหม่",
+            title: recipientId !== userId ? "📌 มอบหมายงานใหม่" : "📝 สร้างงานใหม่",
             body: description || "ไม่มีรายละเอียดเพิ่มเติม",
             type: "create",
             taskTitle: title,
             taskDueDate: dueDate || undefined,
-          }, targetRecipientId);
+          }, recipientId);
         } catch (notifErr) {
-          console.error("Error sending task create notification:", notifErr);
+          console.error("Error sending task create notification to", recipientId, notifErr);
         }
       }
 
@@ -229,7 +271,7 @@ export async function PUT(request: Request) {
     const { actionType = "task" } = body;
 
     if (actionType === "task") {
-      const { id, title, description, status, priority, dueDate, projectId, assigneeId, teamId } = body;
+      const { id, title, description, status, priority, dueDate, projectId, assigneeId, assigneeIds, teamId } = body;
       
       // Verify access to update
       const originalTask = await prisma.task.findFirst({
@@ -238,6 +280,7 @@ export async function PUT(request: Request) {
           OR: [
             { userId },
             { assigneeId: userId },
+            { assignees: { some: { userId } } },
             {
               team: {
                 members: {
@@ -246,6 +289,9 @@ export async function PUT(request: Request) {
               },
             },
           ],
+        },
+        include: {
+          assignees: true,
         },
       });
 
@@ -265,13 +311,39 @@ export async function PUT(request: Request) {
         }
       }
 
-      // Verify assignee is member of the team
-      if (assigneeId && teamId) {
-        const isAssigneeMember = await prisma.teamMember.findFirst({
-          where: { teamId, userId: assigneeId },
+      // Handle assignee updates
+      let targetAssigneeIds: string[] | undefined = undefined;
+      if (Array.isArray(assigneeIds)) {
+        targetAssigneeIds = assigneeIds.filter((mId): mId is string => typeof mId === "string" && mId.trim() !== "");
+      } else if (assigneeId !== undefined) {
+        targetAssigneeIds = assigneeId ? [assigneeId] : [];
+      }
+
+      const effectiveTeamId = teamId || originalTask.teamId;
+      if (targetAssigneeIds !== undefined && effectiveTeamId && targetAssigneeIds.length > 0) {
+        const teamMembers = await prisma.teamMember.findMany({
+          where: {
+            teamId: effectiveTeamId,
+            userId: { in: targetAssigneeIds },
+          },
+          select: { userId: true },
         });
-        if (!isAssigneeMember) {
-          return NextResponse.json({ error: "Assignee is not a team member" }, { status: 400 });
+        const validMemberIds = new Set(teamMembers.map(m => m.userId));
+        targetAssigneeIds = targetAssigneeIds.filter(mId => validMemberIds.has(mId));
+      }
+
+      if (targetAssigneeIds !== undefined) {
+        await prisma.taskAssignee.deleteMany({
+          where: { taskId: id },
+        });
+        if (targetAssigneeIds.length > 0) {
+          await prisma.taskAssignee.createMany({
+            data: targetAssigneeIds.map(uid => ({
+              taskId: id,
+              userId: uid,
+            })),
+            skipDuplicates: true,
+          });
         }
       }
 
@@ -284,37 +356,60 @@ export async function PUT(request: Request) {
           priority: priority !== undefined ? priority : originalTask.priority,
           dueDate: dueDate !== undefined ? (dueDate ? new Date(dueDate) : null) : originalTask.dueDate,
           projectId: projectId !== undefined ? projectId : originalTask.projectId,
-          assigneeId: assigneeId !== undefined ? assigneeId : originalTask.assigneeId,
+          assigneeId: targetAssigneeIds !== undefined
+            ? (targetAssigneeIds[0] || null)
+            : (assigneeId !== undefined ? assigneeId : originalTask.assigneeId),
+        },
+        include: {
+          assignees: {
+            include: {
+              user: {
+                select: { id: true, name: true, email: true, image: true },
+              },
+            },
+          },
         },
       });
 
-      // Send completion notification if status changed to DONE (sent specifically to assignee or creator)
+      // Send completion notification if status changed to DONE (sent to all assignees + creator)
       if (status === "DONE" && originalTask.status !== "DONE") {
-        const completionRecipientId = task.assigneeId || task.userId || userId;
-        try {
-          await sendNotifications({
-            title: "🎉 งานเสร็จสมบูรณ์!",
-            body: "งานได้รับการเปลี่ยนสถานะเป็น เสร็จสิ้น (DONE) เรียบร้อยแล้ว",
-            type: "complete",
-            taskTitle: task.title,
-          }, completionRecipientId);
-        } catch (notifErr) {
-          console.error("Error sending completion notification:", notifErr);
+        const doneRecipients = new Set<string>();
+        if (task.userId) doneRecipients.add(task.userId);
+        if (task.assigneeId) doneRecipients.add(task.assigneeId);
+        task.assignees?.forEach(a => doneRecipients.add(a.userId));
+
+        for (const completionRecipientId of doneRecipients) {
+          try {
+            await sendNotifications({
+              title: "🎉 งานเสร็จสมบูรณ์!",
+              body: "งานได้รับการเปลี่ยนสถานะเป็น เสร็จสิ้น (DONE) เรียบร้อยแล้ว",
+              type: "complete",
+              taskTitle: task.title,
+            }, completionRecipientId);
+          } catch (notifErr) {
+            console.error("Error sending completion notification to", completionRecipientId, notifErr);
+          }
         }
       }
 
-      // Send Task Assigned Notification to the newly assigned user
-      if (assigneeId !== undefined && assigneeId !== null && assigneeId !== originalTask.assigneeId) {
-        try {
-          await sendNotifications({
-            title: "📌 คุณได้รับมอบหมายงานใหม่",
-            body: `คุณได้รับมอบหมายงาน: ${task.title}`,
-            type: "create",
-            taskTitle: task.title,
-            taskDueDate: task.dueDate ? task.dueDate.toISOString() : undefined,
-          }, assigneeId);
-        } catch (notifErr) {
-          console.error("Error sending assignment notification:", notifErr);
+      // Send Task Assigned Notification to any newly added assignees
+      if (targetAssigneeIds !== undefined) {
+        const oldAssigneeIds = new Set(originalTask.assignees.map(a => a.userId));
+        if (originalTask.assigneeId) oldAssigneeIds.add(originalTask.assigneeId);
+        const newlyAssignedIds = targetAssigneeIds.filter(uid => !oldAssigneeIds.has(uid));
+
+        for (const newAssigneeId of newlyAssignedIds) {
+          try {
+            await sendNotifications({
+              title: "📌 คุณได้รับมอบหมายงานใหม่",
+              body: `คุณได้รับมอบหมายงาน: ${task.title}`,
+              type: "create",
+              taskTitle: task.title,
+              taskDueDate: task.dueDate ? task.dueDate.toISOString() : undefined,
+            }, newAssigneeId);
+          } catch (notifErr) {
+            console.error("Error sending assignment notification to", newAssigneeId, notifErr);
+          }
         }
       }
 
