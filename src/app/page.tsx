@@ -704,7 +704,7 @@ export default function Dashboard() {
   const [newTeamColor, setNewTeamColor] = useState("#6366f1");
   const [newTaskAssigneeIds, setNewTaskAssigneeIds] = useState<string[]>([]);
   const [filterAssigneeId, setFilterAssigneeId] = useState<string>("all");
-  const [settingsTab, setSettingsTab] = useState<"profile" | "preferences" | "team" | "notifications">("profile");
+  const [settingsTab, setSettingsTab] = useState<"profile" | "preferences" | "team" | "notifications">("notifications");
   const [isMembersOpen, setIsMembersOpen] = useState(true);
 
   // Pomodoro Timer States
@@ -1997,7 +1997,10 @@ export default function Dashboard() {
 
               {/* Settings trigger */}
               <button
-                onClick={() => setIsSettingsModalOpen(true)}
+                onClick={() => {
+                  setSettingsTab("notifications");
+                  setIsSettingsModalOpen(true);
+                }}
                 className="btn btn-secondary"
                 style={{ padding: "8px" }}
               >
@@ -3202,22 +3205,6 @@ export default function Dashboard() {
           <div className="settings-tabs" style={{ display: "flex", gap: "12px", borderBottom: "1px solid var(--border-color)", marginBottom: "16px", marginTop: "8px" }}>
             <button
               type="button"
-              onClick={() => setSettingsTab("profile")}
-              style={{
-                padding: "8px 16px",
-                border: "none",
-                background: "none",
-                color: settingsTab === "profile" ? "var(--primary)" : "var(--text-muted)",
-                borderBottom: settingsTab === "profile" ? "2px solid var(--primary)" : "none",
-                fontWeight: 600,
-                cursor: "pointer"
-              }}
-            >
-              {language === "TH" ? "โปรไฟล์ของฉัน" : "My Profile"}
-            </button>
-
-            <button
-              type="button"
               onClick={() => setSettingsTab("notifications")}
               style={{
                 padding: "8px 16px",
@@ -3231,55 +3218,23 @@ export default function Dashboard() {
             >
               {language === "TH" ? "การแจ้งเตือน" : "Notifications"}
             </button>
+
+            <button
+              type="button"
+              onClick={() => setSettingsTab("profile")}
+              style={{
+                padding: "8px 16px",
+                border: "none",
+                background: "none",
+                color: settingsTab === "profile" ? "var(--primary)" : "var(--text-muted)",
+                borderBottom: settingsTab === "profile" ? "2px solid var(--primary)" : "none",
+                fontWeight: 600,
+                cursor: "pointer"
+              }}
+            >
+              {language === "TH" ? "โปรไฟล์ของฉัน" : "My Profile"}
+            </button>
           </div>
-
-          {settingsTab === "profile" && (
-            <form onSubmit={handleSaveProfile} style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-              <div className="form-group">
-                <label className="form-label">{language === "TH" ? "อีเมล (บัญชีผู้ใช้)" : "Email (Account)"}</label>
-                <input
-                  type="email"
-                  value={userProfile?.email || ""}
-                  disabled
-                  className="form-input"
-                  style={{ background: "var(--bg-secondary)", color: "var(--text-muted)", cursor: "not-allowed" }}
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">{language === "TH" ? "ชื่อที่แสดง" : "Display Name"}</label>
-                <input
-                  type="text"
-                  value={profileEditName}
-                  onChange={(e) => setProfileEditName(e.target.value)}
-                  placeholder={language === "TH" ? "กรอกชื่อของคุณ" : "Enter your display name"}
-                  className="form-input"
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">{language === "TH" ? "เลือกไอคอนโปรไฟล์" : "Select Profile Icon"}</label>
-                <div className="profile-icon-grid">
-                  {["🦊", "🐰", "🐼", "🐨", "🐯", "🦁", "🐸", "🐵"].map((icon) => (
-                    <div
-                      key={icon}
-                      className={`profile-icon-option ${profileEditImage === icon ? "selected" : ""}`}
-                      onClick={() => setProfileEditImage(icon)}
-                    >
-                      {icon}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "10px" }}>
-                <button type="submit" className="btn btn-primary" disabled={isSavingProfile}>
-                  {isSavingProfile ? (language === "TH" ? "กำลังบันทึก..." : "Saving...") : (language === "TH" ? "บันทึกโปรไฟล์" : "Save Profile")}
-                </button>
-              </div>
-            </form>
-          )}
 
           {settingsTab === "notifications" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
@@ -3765,6 +3720,54 @@ export default function Dashboard() {
                 </button>
               </div>
             </div>
+          )}
+
+          {settingsTab === "profile" && (
+            <form onSubmit={handleSaveProfile} style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+              <div className="form-group">
+                <label className="form-label">{language === "TH" ? "อีเมล (บัญชีผู้ใช้)" : "Email (Account)"}</label>
+                <input
+                  type="email"
+                  value={userProfile?.email || ""}
+                  disabled
+                  className="form-input"
+                  style={{ background: "var(--bg-secondary)", color: "var(--text-muted)", cursor: "not-allowed" }}
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">{language === "TH" ? "ชื่อที่แสดง" : "Display Name"}</label>
+                <input
+                  type="text"
+                  value={profileEditName}
+                  onChange={(e) => setProfileEditName(e.target.value)}
+                  placeholder={language === "TH" ? "กรอกชื่อของคุณ" : "Enter your display name"}
+                  className="form-input"
+                  required
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">{language === "TH" ? "เลือกไอคอนโปรไฟล์" : "Select Profile Icon"}</label>
+                <div className="profile-icon-grid">
+                  {["🦊", "🐰", "🐼", "🐨", "🐯", "🦁", "🐸", "🐵"].map((icon) => (
+                    <div
+                      key={icon}
+                      className={`profile-icon-option ${profileEditImage === icon ? "selected" : ""}`}
+                      onClick={() => setProfileEditImage(icon)}
+                    >
+                      {icon}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "10px" }}>
+                <button type="submit" className="btn btn-primary" disabled={isSavingProfile}>
+                  {isSavingProfile ? (language === "TH" ? "กำลังบันทึก..." : "Saving...") : (language === "TH" ? "บันทึกโปรไฟล์" : "Save Profile")}
+                </button>
+              </div>
+            </form>
           )}
 
         </Modal>
@@ -4377,7 +4380,7 @@ export default function Dashboard() {
             </button>
             
             <button
-              onClick={() => { setIsSettingsModalOpen(true); setIsMobileMenuOpen(false); playSFX("click"); }}
+              onClick={() => { setSettingsTab("notifications"); setIsSettingsModalOpen(true); setIsMobileMenuOpen(false); playSFX("click"); }}
               className="btn btn-secondary"
               style={{ width: "100%", padding: "12px", borderRadius: "12px", justifyContent: "center" }}
             >
