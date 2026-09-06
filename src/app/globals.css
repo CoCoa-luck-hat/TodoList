@@ -4612,6 +4612,115 @@ input:checked + .switch-slider:before {
     border: 1.5px solid var(--primary);
   }
 
+  /* Mobile Team Members Button in Header */
+  .mobile-team-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 20px;
+    background: var(--primary-light);
+    color: var(--primary);
+    border: 1.5px solid rgba(99, 102, 241, 0.25);
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .mobile-team-btn:active {
+    transform: scale(0.92);
+  }
+
+  .mobile-team-btn-badge {
+    background: var(--primary);
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 800;
+    padding: 1px 6px;
+    border-radius: 10px;
+    min-width: 16px;
+    text-align: center;
+    box-shadow: 0 1px 4px rgba(99, 102, 241, 0.4);
+  }
+
+  /* Mobile Team Members Bottom Sheet */
+  .mobile-team-sheet {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background-color: var(--bg-card);
+    border-top-left-radius: 24px;
+    border-top-right-radius: 24px;
+    padding: 16px 20px calc(24px + env(safe-area-inset-bottom, 0px)) 20px;
+    z-index: 100000;
+    box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.2);
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    visibility: hidden;
+    max-height: 82vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .mobile-team-sheet.open {
+    transform: translateY(0);
+    visibility: visible;
+  }
+
+  .mobile-team-sheet-handle {
+    width: 36px;
+    height: 4px;
+    background-color: var(--border-color);
+    border-radius: 2px;
+    margin: 0 auto 12px auto;
+    flex-shrink: 0;
+  }
+
+  .mobile-team-sheet-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .mobile-team-sheet-invite {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    margin-top: 12px;
+    background: var(--bg-subtle, rgba(255, 255, 255, 0.03));
+    border: 1px dashed var(--primary);
+    border-radius: var(--radius-md);
+  }
+
+  .mobile-team-sheet-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 12px;
+    overflow-y: auto;
+    max-height: 42vh;
+    padding-right: 2px;
+  }
+
+  .mobile-team-sheet-member {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    border-radius: var(--radius-md);
+    background: var(--bg-subtle, rgba(0, 0, 0, 0.02));
+    border: 1px solid var(--border-color);
+  }
+
+  [data-theme="dark"] .mobile-team-sheet-member {
+    background: rgba(255, 255, 255, 0.03);
+  }
+
   /* 3. Bottom Navigation Tab Bar */
   .mobile-tab-bar {
     display: flex !important;

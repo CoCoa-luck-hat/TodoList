@@ -46,7 +46,9 @@ import {
   Circle,
   CircleDashed,
   Search,
-  Globe
+  Globe,
+  Copy,
+  X
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -670,6 +672,7 @@ export default function Dashboard() {
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [isTeamSettingsModalOpen, setIsTeamSettingsModalOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isMobileTeamMembersOpen, setIsMobileTeamMembersOpen] = useState(false);
   const [isMobileFabOpen, setIsMobileFabOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
@@ -1734,6 +1737,19 @@ export default function Dashboard() {
             <span>{t("brandName")}</span>
           </div>
           <div className="mobile-header-actions">
+            {/* Team Members Button (only in team workspace) */}
+            {activeWorkspace !== "personal" && activeWorkspace.members && (
+              <button
+                type="button"
+                className="mobile-team-btn"
+                onClick={() => { setIsMobileTeamMembersOpen(true); playSFX("click"); }}
+                title={language === "TH" ? "สมาชิกทีม" : "Team Members"}
+              >
+                <Users className="w-4 h-4" />
+                <span className="mobile-team-btn-badge">{activeWorkspace.members.length}</span>
+              </button>
+            )}
+
             {/* Profile Avatar triggers Workspace Switcher Bottom Sheet */}
             <div onClick={() => { setIsMobileMenuOpen(true); playSFX("click"); }} style={{ cursor: "pointer" }}>
               {userProfile?.image && userProfile.image.startsWith("http") ? (
@@ -4318,6 +4334,37 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {/* Team Members Quick Shortcut (Mobile) */}
+          {activeWorkspace !== "personal" && activeWorkspace.members && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsMobileMenuOpen(false);
+                setIsMobileTeamMembersOpen(true);
+                playSFX("click");
+              }}
+              className="btn btn-secondary"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "12px 14px",
+                borderRadius: "12px",
+                marginBottom: "12px",
+                border: "1px solid var(--border-color)",
+                background: "var(--bg-subtle, rgba(0,0,0,0.02))",
+                fontWeight: 600,
+                cursor: "pointer"
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <Users className="w-4 h-4" style={{ color: "var(--primary)" }} />
+                <span>{language === "TH" ? "ดูสมาชิกทีม" : "Team Members"}</span>
+              </div>
+              <span className="sidebar-team-count">{activeWorkspace.members.length}</span>
+            </button>
+          )}
+
           {/* Actions */}
           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
             <button
@@ -4434,6 +4481,154 @@ export default function Dashboard() {
               top: 0, left: 0, right: 0, bottom: 0,
               backgroundColor: "rgba(0,0,0,0.5)",
               zIndex: 99999,
+              animation: "fadeIn 0.2s ease"
+            }}
+          />
+        )}
+
+        {/* Mobile Team Members Bottom Sheet */}
+        <div
+          className={`mobile-team-sheet ${isMobileTeamMembersOpen ? "open" : ""}`}
+        >
+          <div className="mobile-team-sheet-handle" />
+          <div className="mobile-team-sheet-header">
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <div
+                style={{
+                  width: 14,
+                  height: 14,
+                  borderRadius: "50%",
+                  backgroundColor: activeWorkspace?.color || "#6366f1",
+                  boxShadow: `0 0 8px ${activeWorkspace?.color || "#6366f1"}60`
+                }}
+              />
+              <div>
+                <h3 style={{ margin: 0, fontSize: "1.05rem", fontWeight: 700, color: "var(--text-main)" }}>
+                  {activeWorkspace?.name || (language === "TH" ? "ทีมของคุณ" : "Your Team")}
+                </h3>
+                <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                  {language === "TH" ? "สมาชิกทั้งหมด" : "Total Members"}: {activeWorkspace?.members?.length || 0} {language === "TH" ? "คน" : ""}
+                </span>
+              </div>
+            </div>
+            <button
+              onClick={() => setIsMobileTeamMembersOpen(false)}
+              className="btn-icon"
+              style={{ padding: "6px", borderRadius: "50%", background: "var(--bg-subtle, rgba(0,0,0,0.05))", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+              title={language === "TH" ? "ปิด" : "Close"}
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Quick Invite Section */}
+          {activeWorkspace?.inviteCode && (
+            <div className="mobile-team-sheet-invite">
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px", flexGrow: 1, minWidth: 0 }}>
+                <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", fontWeight: 600 }}>
+                  {language === "TH" ? "รหัสเชิญทีม" : "Team Invite Code"}
+                </span>
+                <span style={{ fontSize: "0.88rem", fontWeight: 700, letterSpacing: "1px", color: "var(--primary)" }}>
+                  {activeWorkspace.inviteCode}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ padding: "6px 12px", fontSize: "0.75rem", borderRadius: "8px", flexShrink: 0 }}
+                onClick={() => {
+                  const inviteUrl = `${window.location.origin}/join/${activeWorkspace.inviteCode}`;
+                  navigator.clipboard.writeText(inviteUrl);
+                  showToast(language === "TH" ? "คัดลอกลิงก์เชิญสำเร็จ!" : "Invite link copied!", "success");
+                  playSFX("click");
+                }}
+              >
+                <Copy className="w-3.5 h-3.5" style={{ marginRight: "4px" }} />
+                {language === "TH" ? "คัดลอกลิงก์" : "Copy Link"}
+              </button>
+            </div>
+          )}
+
+          {/* Member List */}
+          <div className="mobile-team-sheet-list">
+            {(activeWorkspace?.members || []).filter((m: any) => m.user).map((m: any, idx: number) => (
+              <div key={m.user.id} className="mobile-team-sheet-member">
+                <div className="sidebar-member-avatar-wrap" style={{ position: "relative" }}>
+                  {m.user.image && m.user.image.startsWith("http") ? (
+                    <img src={m.user.image} alt={m.user.name || "User"} className="sidebar-member-avatar" style={{ width: 36, height: 36 }} />
+                  ) : m.user.image ? (
+                    <div className="sidebar-member-avatar sidebar-member-avatar-fallback" style={{ width: 36, height: 36, fontSize: "1.1rem" }}>
+                      {m.user.image}
+                    </div>
+                  ) : (
+                    <div className="sidebar-member-avatar sidebar-member-avatar-fallback" style={{ width: 36, height: 36 }}>
+                      {(m.user.name || m.user.email || "U")[0].toUpperCase()}
+                    </div>
+                  )}
+                  <span
+                    className={`sidebar-member-status ${idx < 2 ? "sidebar-member-online" : "sidebar-member-offline"}`}
+                    style={{ width: 9, height: 9, bottom: 0, right: 0 }}
+                  />
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", flexGrow: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span style={{ fontSize: "0.88rem", fontWeight: 700, color: "var(--text-main)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {m.user.name || "User"}
+                    </span>
+                    {m.role === "OWNER" && (
+                      <span title={language === "TH" ? "หัวหน้าทีม" : "Team Owner"} style={{ fontSize: "0.8rem" }}>👑</span>
+                    )}
+                  </div>
+                  <span style={{ fontSize: "0.72rem", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {m.user.email}
+                  </span>
+                </div>
+                <span
+                  style={{
+                    fontSize: "0.68rem",
+                    fontWeight: 700,
+                    padding: "2px 8px",
+                    borderRadius: "10px",
+                    backgroundColor: m.role === "OWNER" ? "rgba(245, 158, 11, 0.12)" : "var(--bg-subtle, rgba(0,0,0,0.04))",
+                    color: m.role === "OWNER" ? "#f59e0b" : "var(--text-muted)",
+                    border: m.role === "OWNER" ? "1px solid rgba(245, 158, 11, 0.3)" : "1px solid var(--border-color)",
+                    flexShrink: 0
+                  }}
+                >
+                  {m.role === "OWNER" ? (language === "TH" ? "หัวหน้าทีม" : "Owner") : (language === "TH" ? "สมาชิก" : "Member")}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* Footer Action */}
+          <div style={{ marginTop: "14px", paddingTop: "12px", borderTop: "1px solid var(--border-color)" }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ width: "100%", padding: "12px", borderRadius: "12px", justifyContent: "center", fontWeight: 600 }}
+              onClick={() => {
+                setIsMobileTeamMembersOpen(false);
+                setIsTeamSettingsModalOpen(true);
+                playSFX("click");
+              }}
+            >
+              <SettingsIcon className="w-4 h-4" style={{ marginRight: "8px" }} />
+              {language === "TH" ? "ตั้งค่าและจัดการสมาชิกทีม" : "Team Settings & Manage Members"}
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile Team Sheet Overlay */}
+        {isMobileTeamMembersOpen && (
+          <div
+            onClick={() => setIsMobileTeamMembersOpen(false)}
+            style={{
+              position: "fixed",
+              top: 0, left: 0, right: 0, bottom: 0,
+              backgroundColor: "rgba(0,0,0,0.5)",
+              zIndex: 99999,
+              backdropFilter: "blur(4px)",
               animation: "fadeIn 0.2s ease"
             }}
           />
